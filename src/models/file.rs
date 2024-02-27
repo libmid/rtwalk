@@ -1,8 +1,9 @@
 use async_graphql::SimpleObject;
 use bytes::Bytes;
 use opendal::{Operator, Result};
+use serde::{Deserialize, Serialize};
 
-#[derive(SimpleObject)]
+#[derive(SimpleObject, Serialize, Deserialize)]
 pub struct File {
     loc: String,
 }

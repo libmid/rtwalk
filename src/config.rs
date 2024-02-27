@@ -1,0 +1,2 @@
+pub const MIN_PASSWORD_SCORE: u8 = 3;
+pub const VERIFICATION_CODE_EXPIERY_SECONDS: u64 = 5 * 60;
