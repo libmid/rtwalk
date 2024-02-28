@@ -46,4 +46,16 @@ impl QueryRoot {
         users::push_pending(state!(ctx), username, email, password).await?;
         Ok("Verification code sent to email")
     }
+
+    async fn verify_user(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(validator(min_length = 4, max_length = 20, regex = r"^[a-z0-9_]+$"))]
+        username: String,
+        code: u64,
+    ) -> Result<User> {
+        Ok(users::verify_user(state!(ctx), username, code)
+            .await?
+            .into())
+    }
 }
