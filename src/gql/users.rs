@@ -14,6 +14,7 @@ use async_graphql::CustomValidator;
 use mongodm::{doc, f};
 use rand::Rng;
 
+use rustis::commands::GenericCommands;
 use rustis::{
     client::BatchPreparedCommand,
     commands::{SetCondition, SetExpiration, StringCommands},
@@ -97,13 +98,13 @@ pub async fn push_pending(
     // Construct user and secret.
     let (pending_user_key, tries_remaining_key, secret_key, verification_code_key) = (
         format!("pending:{}", &username),
-        format!("tries:{}", &username),
+        format!("remaining_tries:{}", &username),
         format!("pending_secret:{}", &username),
         format!("verification_code:{}", &username),
     );
     let user = DBUser::new(username, false);
     let secret = DBUserSecret {
-        user_id: None,
+        user_id: user._id,
         email,
         password: password_hash,
     };
@@ -151,6 +152,8 @@ pub async fn push_pending(
     Ok(())
 }
 
+// TODO: There are a bunch of seperate string allocation for keys
+// maybe do those at once?
 pub async fn verify_user(
     state: &State,
     username: String,
@@ -160,9 +163,10 @@ pub async fn verify_user(
     if user.is_none() {
         return Err(RtwalkError::VerificationCodeExpired);
     }
+    let user = user.expect("Can't fail");
     let mut pipeline = state.redis.create_pipeline();
     pipeline
-        .get::<_, ()>(format!("tries:{}", &username))
+        .get::<_, ()>(format!("remaining_tries:{}", &username))
         .queue();
     pipeline
         .get::<_, ()>(format!("pending_secret:{}", &username))
@@ -171,6 +175,66 @@ pub async fn verify_user(
         .get::<_, ()>(format!("verification_code:{}", &username))
         .queue();
 
-    let (tries, pending_secret, verification_code): (u64, String, u64) = pipeline.execute().await?;
-    todo!()
+    // Can this fail? If TTL expires between user fetch and this then yes,
+    // In that case we say its an internal server error.
+    let (remaining_tries, pending_secret, verification_code): (u64, String, u64) =
+        pipeline.execute().await?;
+    if remaining_tries == 0 {
+        // Delete keys
+        let mut pipeline = state.redis.create_pipeline();
+        pipeline.del(format!("pending:{}", &username)).forget();
+        pipeline
+            .del(format!("remaining_tries:{}", &username))
+            .forget();
+        pipeline
+            .del(format!("pending_secret:{}", &username))
+            .forget();
+        pipeline
+            .del(format!("verification_code:{}", &username))
+            .forget();
+        pipeline.execute().await?;
+        return Err(RtwalkError::VerificationCodeExpired);
+    }
+    // Compare verification code
+    // TODO: Maybe change this to be black box comparison?
+    if code != verification_code {
+        // TODO: This might create a key without TTL if remaining_tries has already expired
+        state
+            .redis
+            .decr(format!("remaining_tries:{}", &username))
+            .await?;
+        return Err(RtwalkError::InvalidVerificationCode);
+    }
+    // The user is REAL, make his account
+    let user = create_user(
+        state,
+        serde_json::from_str(&user).expect("Serialized by server. Can't fail."),
+        serde_json::from_str(&pending_secret).expect("Serialized by server. Can't fail."),
+    )
+    .await?;
+    // Delete keys.
+    let mut pipeline = state.redis.create_pipeline();
+    pipeline.del(format!("pending:{}", &username)).forget();
+    pipeline
+        .del(format!("remaining_tries:{}", &username))
+        .forget();
+    pipeline
+        .del(format!("pending_secret:{}", &username))
+        .forget();
+    pipeline
+        .del(format!("verification_code:{}", &username))
+        .forget();
+    pipeline.execute().await?;
+    // We are done
+    Ok(user)
+}
+
+async fn create_user(
+    state: &State,
+    user: DBUser,
+    secret: DBUserSecret,
+) -> Result<DBUser, RtwalkError> {
+    db!(state.mongo).insert_one(&user, None).await?;
+    secret_db!(state.mongo).insert_one(secret, None).await?;
+    Ok(user)
 }
