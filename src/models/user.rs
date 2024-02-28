@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct DBUser {
-    pub _id: Option<ObjectId>,
+    pub _id: ObjectId,
     pub username: String,
     pub display_name: String,
     pub bio: Option<String>,
@@ -22,7 +22,7 @@ impl DBUser {
     pub fn new(username: String, bot: bool) -> Self {
         let created_at = get_sys_time_secs();
         DBUser {
-            _id: None,
+            _id: ObjectId::new(),
             username: username.clone(),
             display_name: username,
             bio: None,
@@ -71,7 +71,7 @@ impl Model for DBUser {
 
 #[derive(Serialize, Deserialize)]
 pub struct DBUserSecret {
-    pub user_id: Option<ObjectId>, // Technically can't be None but its there while user is pending
+    pub user_id: ObjectId,
     pub email: String,
     pub password: String,
 }
@@ -108,10 +108,7 @@ pub struct User {
 impl From<DBUser> for User {
     fn from(value: DBUser) -> Self {
         Self {
-            id: value
-                ._id
-                .expect("Unexpected conversion of non-existing DBUser")
-                .to_string(),
+            id: value._id.to_string(),
             username: value.username,
             display_name: value.display_name,
             bio: value.bio,
