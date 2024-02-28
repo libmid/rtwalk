@@ -17,6 +17,8 @@ pub enum RtwalkError {
     RedisError(#[from] rustis::Error),
     #[error("Your verification code has expired. Register again.")]
     VerificationCodeExpired,
+    #[error("Invalid verification code")]
+    InvalidVerificationCode,
 }
 
 impl ErrorExtensions for RtwalkError {
@@ -28,6 +30,7 @@ impl ErrorExtensions for RtwalkError {
             | RtwalkError::RedisError(_) => e.set("tp", "INTERNAL_ERROR"),
             RtwalkError::UsernameAlreadyExists => e.set("tp", "USERNAME_ALREADY_EXISTS"),
             RtwalkError::VerificationCodeExpired => e.set("tp", "VERIFICATION_CODE_EXPIRED"),
+            RtwalkError::InvalidVerificationCode => e.set("tp", "INVALID_VERIFICATION_CODE"),
         })
     }
 }
