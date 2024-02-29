@@ -1,12 +1,12 @@
 use super::file::File;
 use crate::utils::get_sys_time_secs;
 use async_graphql::SimpleObject;
-use mongodm::{bson::oid::ObjectId, f, CollectionConfig, Index, IndexOption, Indexes, Model};
+use mongodm::{f, CollectionConfig, Index, IndexOption, Indexes, Model};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct DBUser {
-    pub _id: ObjectId,
+    pub id: String,
     pub username: String,
     pub display_name: String,
     pub bio: Option<String>,
@@ -22,7 +22,7 @@ impl DBUser {
     pub fn new(username: String, bot: bool) -> Self {
         let created_at = get_sys_time_secs();
         DBUser {
-            _id: ObjectId::new(),
+            id: cuid2::cuid(),
             username: username.clone(),
             display_name: username,
             bio: None,
@@ -71,7 +71,7 @@ impl Model for DBUser {
 
 #[derive(Serialize, Deserialize)]
 pub struct DBUserSecret {
-    pub user_id: ObjectId,
+    pub user_id: String,
     pub email: String,
     pub password: String,
 }
@@ -108,7 +108,7 @@ pub struct User {
 impl From<DBUser> for User {
     fn from(value: DBUser) -> Self {
         Self {
-            id: value._id.to_string(),
+            id: value.id,
             username: value.username,
             display_name: value.display_name,
             bio: value.bio,

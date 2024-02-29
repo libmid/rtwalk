@@ -1,53 +1,55 @@
-use std::{env, ops::Deref, sync::Arc};
+use std::{env, sync::Arc};
 
 use crate::gql::ApiInfo;
 use async_graphql::{http::GraphiQLSource, EmptyMutation, EmptySubscription, Schema};
-use async_graphql_axum::GraphQL;
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
     response::{Html, IntoResponse},
-    routing::{get, post_service},
-    Router,
+    routing::get,
+    Extension, Router,
 };
 use cliparser::{
     help, parse_process,
     types::{Argument, ArgumentOccurrence, ArgumentValueType, CliSpec, CliSpecMetaInfo},
 };
+use gql::QueryRoot;
 use mongodm::mongo;
 use rustis::client::Client;
 use tokio::net::TcpListener;
+use tower_cookies::{CookieManagerLayer, Cookies, Key};
+use tracing::info;
 
 pub mod config;
 pub mod error;
 mod gql;
 pub mod models;
+pub mod state;
 pub mod template;
 pub mod utils;
 
 async fn graphiql() -> impl IntoResponse {
-    Html(GraphiQLSource::build().endpoint("/").finish())
+    Html(
+        GraphiQLSource::build()
+            .credentials(async_graphql::http::Credentials::Include)
+            .endpoint("/")
+            .finish(),
+    )
 }
 
-pub struct State {
-    inner: Arc<InnerState>,
-}
-
-pub struct InnerState {
-    pub site_name: &'static str,
-    pub info: ApiInfo,
-    pub redis: Client,
-    pub pubsub: Client,
-    pub mongo: mongo::Client,
-}
-
-impl Deref for State {
-    type Target = InnerState;
-    fn deref(&self) -> &Self::Target {
-        &*self.inner
-    }
+async fn gql(
+    schema: Extension<Schema<QueryRoot, EmptyMutation, EmptySubscription>>,
+    cookies: Cookies,
+    request: GraphQLRequest,
+) -> GraphQLResponse {
+    schema
+        .execute(request.into_inner().data(cookies))
+        .await
+        .into()
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    tracing_subscriber::fmt::init();
     let mut spec = CliSpec::new();
 
     spec = spec
@@ -84,14 +86,14 @@ async fn main() -> std::io::Result<()> {
     let pubsub_redis = Client::connect("127.0.0.1:6379")
         .await
         .expect("Redis connection failed");
-    let mongo_client =
-        mongo::Client::with_uri_str(&env::var("MONGODB_URL").expect("MONGODB_URL not set"))
-            .await
-            .expect("Mongodb connection failed");
+    let mongo_client = mongo::Client::with_uri_str(&env::var("MONGODB_URL").expect("MONGODB_URL"))
+        .await
+        .expect("Mongodb connection failed");
+    let cookies_key = env::var("COOKIE_KEY").expect("COOKIE_KEY");
 
     let schema = Schema::build(gql::QueryRoot, EmptyMutation, EmptySubscription)
-        .data(State {
-            inner: Arc::new(InnerState {
+        .data(state::State {
+            inner: Arc::new(state::InnerState {
                 site_name: "DreamH",
                 info: ApiInfo {
                     major: 0,
@@ -104,20 +106,26 @@ async fn main() -> std::io::Result<()> {
                 pubsub: pubsub_redis,
                 // Its Arc internally so its fine to clone
                 mongo: mongo_client.clone(),
+                cookie_key: Key::from(cookies_key.as_bytes()),
             }),
         })
         .finish();
 
     let app = Router::new()
-        .route("/", get(graphiql))
-        .route("/api", post_service(GraphQL::new(schema)));
+        .route("/", get(graphiql).post(gql))
+        .layer(CookieManagerLayer::new())
+        .layer(Extension(schema));
 
-    let listener = TcpListener::bind(format!(
-        "{}:{}",
-        res.argument_values.get("host").unwrap()[0],
-        res.argument_values.get("port").unwrap()[0]
-    ))
-    .await?;
+    let port = &res.argument_values.get("port").unwrap()[0];
+    let host = &res.argument_values.get("host").unwrap()[0];
+
+    let listener = TcpListener::bind(format!("{}:{}", &host, &port,)).await?;
+
+    info!("Starting server at {}:{}", host, port);
+
+    drop(spec);
+    drop(res);
+
     axum::serve(listener, app).await?;
 
     mongo_client.shutdown().await;

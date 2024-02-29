@@ -3,7 +3,7 @@ use crate::template::EmailVerify;
 use crate::{
     error::RtwalkError,
     models::user::{db, secret_db, DBUser, DBUserSecret},
-    State,
+    state::State,
 };
 
 use argon2::{
@@ -11,7 +11,7 @@ use argon2::{
     Argon2,
 };
 use async_graphql::CustomValidator;
-use mongodm::{doc, f};
+use mongodm::prelude::*;
 use rand::Rng;
 
 use rustis::commands::GenericCommands;
@@ -20,6 +20,7 @@ use rustis::{
     commands::{SetCondition, SetExpiration, StringCommands},
 };
 
+use mongodm::mongo::bson;
 use sailfish::TemplateOnce;
 use zxcvbn::zxcvbn;
 
@@ -104,7 +105,7 @@ pub async fn push_pending(
     );
     let user = DBUser::new(username, false);
     let secret = DBUserSecret {
-        user_id: user._id,
+        user_id: user.id.clone(),
         email,
         password: password_hash,
     };
@@ -229,6 +230,7 @@ pub async fn verify_user(
     Ok(user)
 }
 
+#[inline]
 async fn create_user(
     state: &State,
     user: DBUser,
@@ -237,4 +239,54 @@ async fn create_user(
     db!(state.mongo).insert_one(&user, None).await?;
     secret_db!(state.mongo).insert_one(secret, None).await?;
     Ok(user)
+}
+
+// Returns the user if creds are correct, else return error
+pub async fn login_user(
+    state: &State,
+    email: String,
+    password: String,
+) -> Result<DBUser, RtwalkError> {
+    // First try to find user and their secret
+    let mut user_secret_stream = secret_db!(state.mongo)
+        .aggregate(
+            pipeline![
+                Match: { f!(email in DBUserSecret): &email},
+                Lookup {
+                From: "DBUser",
+                As: "user",
+                LocalField: "user_id",
+                ForeignField: "id",
+                }
+            ],
+            None,
+        )
+        .await?;
+    if let Some(doc) = user_secret_stream.next().await {
+        let mut doc = doc?;
+        let parsed_hash = PasswordHash::new(
+            doc.get("password")
+                .expect("Can't fail")
+                .as_str()
+                .expect("can't fail"),
+        )
+        .expect("Can't fail");
+        if Argon2::default()
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok()
+        {
+            return Ok(bson::from_bson(
+                doc.get_mut("user")
+                    .expect("Can't fail")
+                    .as_array_mut()
+                    .expect("Can't fail")
+                    .pop()
+                    .expect("Can't fail"),
+            )
+            .expect("Can't fail"));
+        }
+    } else {
+        return Err(RtwalkError::InvalidCredentials);
+    }
+    return Err(RtwalkError::InvalidCredentials);
 }

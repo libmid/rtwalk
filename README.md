@@ -21,6 +21,7 @@ For a python client/bot library check [rtlink](https://github.com/midatindex0/rt
 #### Required environment variables:
 - `MONGODB_URL`
 - `REDIS_URL`
+- `COOKIE_KEY` 64 bytes base64 encoded string
 - `MISOSOUP_URL` (optional) to use VC.
 
 Clone the repo, compile and run it.
