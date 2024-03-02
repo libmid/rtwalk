@@ -16,10 +16,12 @@ pub struct DBUser {
     pub modified_at: u64,
     pub admin: bool,
     pub bot: bool,
+    pub owner: Option<String>,
 }
 
 impl DBUser {
-    pub fn new(username: String, bot: bool) -> Self {
+    /// Creates a new [`DBUser`].
+    pub fn new(username: String, bot: bool, owner: Option<String>) -> Self {
         let created_at = get_sys_time_secs();
         DBUser {
             id: cuid2::cuid(),
@@ -32,6 +34,7 @@ impl DBUser {
             modified_at: created_at,
             admin: false,
             bot,
+            owner,
         }
     }
 }
@@ -91,7 +94,7 @@ impl Model for DBUserSecret {
     type CollConf = DBUserSecretCollConf;
 }
 
-#[derive(SimpleObject, Serialize)]
+#[derive(SimpleObject, Serialize, Deserialize)]
 pub struct User {
     pub id: String,
     pub username: String,
@@ -103,6 +106,7 @@ pub struct User {
     pub modified_at: u64,
     pub admin: bool,
     pub bot: bool,
+    pub owner: Option<String>,
 }
 
 impl From<DBUser> for User {
@@ -118,6 +122,7 @@ impl From<DBUser> for User {
             modified_at: value.modified_at,
             admin: value.admin,
             bot: value.bot,
+            owner: value.owner,
         }
     }
 }

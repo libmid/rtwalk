@@ -103,7 +103,7 @@ pub async fn push_pending(
         format!("pending_secret:{}", &username),
         format!("verification_code:{}", &username),
     );
-    let user = DBUser::new(username, false);
+    let user = DBUser::new(username, false, None);
     let secret = DBUserSecret {
         user_id: user.id.clone(),
         email,

@@ -1,8 +1,11 @@
-use std::{ops::Deref, sync::Arc};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
 use mongodm::mongo;
 
-use crate::gql::ApiInfo;
+use crate::{gql::ApiInfo, models::user::User};
 
 pub struct State {
     pub inner: Arc<InnerState>,
@@ -23,3 +26,6 @@ impl Deref for State {
         &*self.inner
     }
 }
+
+#[derive(Default)]
+pub struct Auth(pub Mutex<Option<User>>);

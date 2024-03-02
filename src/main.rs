@@ -1,7 +1,10 @@
 use std::{env, sync::Arc};
 
 use crate::gql::ApiInfo;
-use async_graphql::{http::GraphiQLSource, EmptyMutation, EmptySubscription, Schema};
+
+#[cfg(debug_assertions)]
+use async_graphql::extensions::ApolloTracing;
+use async_graphql::{http::GraphiQLSource, EmptySubscription, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
     response::{Html, IntoResponse},
@@ -12,20 +15,21 @@ use cliparser::{
     help, parse_process,
     types::{Argument, ArgumentOccurrence, ArgumentValueType, CliSpec, CliSpecMetaInfo},
 };
-use gql::QueryRoot;
+use gql::{MutationRoot, QueryRoot};
 use mongodm::mongo;
 use rustis::client::Client;
+use state::Auth;
 use tokio::net::TcpListener;
 use tower_cookies::{CookieManagerLayer, Cookies, Key};
 use tracing::info;
 
-pub mod config;
-pub mod error;
+pub(crate) mod config;
+pub(crate) mod error;
 mod gql;
-pub mod models;
-pub mod state;
-pub mod template;
-pub mod utils;
+pub(crate) mod models;
+pub(crate) mod state;
+pub(crate) mod template;
+pub(crate) mod utils;
 
 async fn graphiql() -> impl IntoResponse {
     Html(
@@ -37,12 +41,12 @@ async fn graphiql() -> impl IntoResponse {
 }
 
 async fn gql(
-    schema: Extension<Schema<QueryRoot, EmptyMutation, EmptySubscription>>,
+    schema: Extension<Schema<QueryRoot, MutationRoot, EmptySubscription>>,
     cookies: Cookies,
     request: GraphQLRequest,
 ) -> GraphQLResponse {
     schema
-        .execute(request.into_inner().data(cookies))
+        .execute(request.into_inner().data(cookies).data(Auth::default()))
         .await
         .into()
 }
@@ -55,7 +59,7 @@ async fn main() -> std::io::Result<()> {
     spec = spec
         .set_meta_info(Some(CliSpecMetaInfo {
             version: Some("0.1.0".into()),
-            description: Some("A sumple forum app".into()),
+            description: Some("A sumple forum backend".into()),
             project: Some("rtwalk".into()),
             help_post_text: None,
             author: None,
@@ -91,30 +95,30 @@ async fn main() -> std::io::Result<()> {
         .expect("Mongodb connection failed");
     let cookies_key = env::var("COOKIE_KEY").expect("COOKIE_KEY");
 
-    let schema = Schema::build(gql::QueryRoot, EmptyMutation, EmptySubscription)
-        .data(state::State {
-            inner: Arc::new(state::InnerState {
-                site_name: "DreamH",
-                info: ApiInfo {
-                    major: 0,
-                    minor: 1,
-                    bugfix: 0,
-                    rte: "ws://localhost:4001/rte",
-                    vc: "ws://localhost:4002/ws",
-                },
-                redis,
-                pubsub: pubsub_redis,
-                // Its Arc internally so its fine to clone
-                mongo: mongo_client.clone(),
-                cookie_key: Key::from(cookies_key.as_bytes()),
-            }),
-        })
-        .finish();
+    let schema = Schema::build(QueryRoot, MutationRoot, EmptySubscription).data(state::State {
+        inner: Arc::new(state::InnerState {
+            site_name: "DreamH",
+            info: ApiInfo {
+                major: 0,
+                minor: 1,
+                bugfix: 0,
+                rte: "ws://localhost:4001/rte",
+                vc: "ws://localhost:4002/ws",
+            },
+            redis,
+            pubsub: pubsub_redis,
+            // Its Arc internally so its fine to clone
+            mongo: mongo_client.clone(),
+            cookie_key: Key::from(cookies_key.as_bytes()),
+        }),
+    });
+    #[cfg(debug_assertions)]
+    let schema = schema.extension(ApolloTracing);
 
     let app = Router::new()
         .route("/", get(graphiql).post(gql))
         .layer(CookieManagerLayer::new())
-        .layer(Extension(schema));
+        .layer(Extension(schema.finish()));
 
     let port = &res.argument_values.get("port").unwrap()[0];
     let host = &res.argument_values.get("host").unwrap()[0];
