@@ -1,0 +1,10 @@
+- [x] Create user account
+- [x] Login
+- [x] Logout
+- [x] All session logout
+- [ ] Create bot account
+- [ ] Reset password
+- [ ] Reset bot token
+- [ ] Maybe allow sessionless authentication with paseto for bots?
+- [ ] Logout bot from user account
+- [ ] Update user
