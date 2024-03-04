@@ -1,4 +1,4 @@
-use std::{env, sync::Arc};
+use std::{env, error::Error, sync::Arc};
 
 use crate::gql::ApiInfo;
 
@@ -15,10 +15,12 @@ use cliparser::{
     help, parse_process,
     types::{Argument, ArgumentOccurrence, ArgumentValueType, CliSpec, CliSpecMetaInfo},
 };
+use dotenvy::dotenv;
 use gql::{MutationRoot, QueryRoot};
 use mongodm::mongo;
 use rustis::client::Client;
 use state::Auth;
+use surrealdb::{engine::remote::ws::Ws, opt::auth::Root, Surreal};
 use tokio::net::TcpListener;
 use tower_cookies::{CookieManagerLayer, Cookies, Key};
 use tracing::info;
@@ -52,7 +54,8 @@ async fn gql(
 }
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<(), Box<dyn Error>> {
+    dotenv()?;
     tracing_subscriber::fmt::init();
     let mut spec = CliSpec::new();
 
@@ -84,15 +87,21 @@ async fn main() -> std::io::Result<()> {
         .set_positional_argument(None);
     let res = parse_process(&spec).expect(&help(&spec));
 
-    let redis = Client::connect("127.0.0.1:6379")
-        .await
-        .expect("Redis connection failed");
-    let pubsub_redis = Client::connect("127.0.0.1:6379")
-        .await
-        .expect("Redis connection failed");
-    let mongo_client = mongo::Client::with_uri_str(&env::var("MONGODB_URL").expect("MONGODB_URL"))
-        .await
-        .expect("Mongodb connection failed");
+    let redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
+    let pubsub_redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
+    let mongo_client =
+        mongo::Client::with_uri_str(&env::var("MONGODB_URL").expect("MONGODB_URL")).await?;
+    let surreal_client = Surreal::new::<Ws>("0.0.0.0:8000").await?;
+
+    surreal_client
+        .signin(Root {
+            username: "root",
+            password: "root",
+        })
+        .await?;
+
+    surreal_client.use_ns("dev").use_db("rtwalk").await?;
+
     let cookies_key = env::var("COOKIE_KEY").expect("COOKIE_KEY");
 
     let schema = Schema::build(QueryRoot, MutationRoot, EmptySubscription).data(state::State {
@@ -109,6 +118,7 @@ async fn main() -> std::io::Result<()> {
             pubsub: pubsub_redis,
             // Its Arc internally so its fine to clone
             mongo: mongo_client.clone(),
+            db: surreal_client,
             cookie_key: Key::from(cookies_key.as_bytes()),
         }),
     });
@@ -131,8 +141,6 @@ async fn main() -> std::io::Result<()> {
     drop(res);
 
     axum::serve(listener, app).await?;
-
-    mongo_client.shutdown().await;
 
     Ok(())
 }

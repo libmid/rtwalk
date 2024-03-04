@@ -4,7 +4,7 @@ use async_graphql::SimpleObject;
 use mongodm::{f, CollectionConfig, Index, IndexOption, Indexes, Model};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DBUser {
     pub id: String,
     pub username: String,
@@ -72,7 +72,7 @@ impl Model for DBUser {
     type CollConf = DBUserCollConf;
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DBUserSecret {
     pub user_id: String,
     pub email: String,
@@ -94,7 +94,7 @@ impl Model for DBUserSecret {
     type CollConf = DBUserSecretCollConf;
 }
 
-#[derive(SimpleObject, Serialize, Deserialize)]
+#[derive(SimpleObject, Serialize, Deserialize, Debug)]
 pub struct User {
     pub id: String,
     pub username: String,

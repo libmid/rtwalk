@@ -4,6 +4,7 @@ use std::{
 };
 
 use mongodm::mongo;
+use surrealdb::{engine::remote::ws::Client, Surreal};
 
 use crate::{gql::ApiInfo, models::user::User};
 
@@ -17,6 +18,7 @@ pub struct InnerState {
     pub redis: rustis::client::Client,
     pub pubsub: rustis::client::Client,
     pub mongo: mongo::Client,
+    pub db: Surreal<Client>,
     pub cookie_key: tower_cookies::cookie::Key,
 }
 

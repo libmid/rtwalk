@@ -3,7 +3,7 @@ use bytes::Bytes;
 use opendal::{Operator, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(SimpleObject, Serialize, Deserialize)]
+#[derive(SimpleObject, Serialize, Deserialize, Debug)]
 pub struct File {
     loc: String,
 }
