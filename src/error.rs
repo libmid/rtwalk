@@ -14,6 +14,8 @@ pub enum RtwalkError {
     #[error("Internal server error")]
     MongoError(#[from] mongodm::mongo::error::Error),
     #[error("Internal server error")]
+    DatabaseError(#[from] surrealdb::Error),
+    #[error("Internal server error")]
     RedisError(#[from] rustis::Error),
     #[error("Your verification code has expired. Register again.")]
     VerificationCodeExpired,
@@ -29,6 +31,7 @@ impl ErrorExtensions for RtwalkError {
             RtwalkError::UnauthenticatedRequest => e.set("tp", "UNAUTHENTICATED_REQUEST"),
             RtwalkError::InternalError
             | RtwalkError::MongoError(_)
+            | RtwalkError::DatabaseError(_)
             | RtwalkError::RedisError(_) => e.set("tp", "INTERNAL_ERROR"),
             RtwalkError::UsernameAlreadyExists => e.set("tp", "USERNAME_ALREADY_EXISTS"),
             RtwalkError::VerificationCodeExpired => e.set("tp", "VERIFICATION_CODE_EXPIRED"),

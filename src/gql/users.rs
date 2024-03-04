@@ -56,10 +56,15 @@ pub async fn push_pending(
 ) -> Result<(), RtwalkError> {
     // Assumes data is already validated.
     // First make sure username is unique
-    let user = db!(state.mongo)
-        .find_one(doc! {f! (username in DBUser): &username}, None)
+    let mut exists = state
+        .db
+        .query("SELECT TRUE FROM user WHERE username = $username")
+        .query("SELECT TRUE FROM user_secret_stream WHERE email = $email")
+        .bind(("username", &username))
+        .bind(("email", &email))
         .await?;
-    if user.is_some() {
+    let username_exists: Option<bool> = exists.take(0)?;
+    if username_exists.is_some() {
         return Err(RtwalkError::UsernameAlreadyExists);
     }
     // Make sure no one is trying to verify with the same suername
@@ -69,20 +74,22 @@ pub async fn push_pending(
     }
 
     // Check if user with same email already exists.
-    let user = secret_db!(state.mongo)
-        .find_one(doc! {f!(email in DBUserSecret): &email}, None)
-        .await?;
-    if user.is_some() {
+    let email_exists: Option<bool> = exists.take(1)?;
+    if email_exists.is_some() {
         // Silently drop.
         return Ok(());
     }
     // Hash password
-    let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-    let password_hash = argon2
-        .hash_password(password.as_bytes(), &salt)
-        .expect("cant fail")
-        .to_string();
+    let password_hash = tokio::task::spawn_blocking(move || {
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        argon2
+            .hash_password(password.as_bytes(), &salt)
+            .expect("cant fail")
+            .to_string()
+    })
+    .await
+    .map_err(|_| RtwalkError::InternalError)?;
     // We have verified and confirmed user is valid, generate verification code.
     let code = rand::thread_rng().gen_range(10000..=99999);
     // Send email to the user

@@ -119,8 +119,8 @@ impl MutationRoot {
         ))]
         password: String,
     ) -> Result<&str> {
-        // On success makes 2 database and 2 redis query.
-        // Maimum 2 database and 1 redis query on failure.
+        // On success makes 1 database and 2 redis query.
+        // Maximum 1 database and 1 redis query on failure.
         // Also hashing takes place in this step.
         // Also email gets sends here. TODO: Doc if email is sent immediately or pushed to a queue.
         users::push_pending(state!(ctx), username, email, password).await?;
