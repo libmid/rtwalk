@@ -20,7 +20,7 @@ use gql::{MutationRoot, QueryRoot};
 use mongodm::mongo;
 use rustis::client::Client;
 use state::Auth;
-use surrealdb::{engine::remote::ws::Ws, opt::auth::Root, Surreal};
+use surrealdb::{engine::remote::ws::Ws, opt::auth::Database, Surreal};
 use tokio::net::TcpListener;
 use tower_cookies::{CookieManagerLayer, Cookies, Key};
 use tracing::info;
@@ -94,13 +94,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let surreal_client = Surreal::new::<Ws>("0.0.0.0:8000").await?;
 
     surreal_client
-        .signin(Root {
+        .signin(Database {
             username: "root",
             password: "root",
+            namespace: "dev",
+            database: "rtwalk",
         })
         .await?;
-
-    surreal_client.use_ns("dev").use_db("rtwalk").await?;
 
     let cookies_key = env::var("COOKIE_KEY").expect("COOKIE_KEY");
 

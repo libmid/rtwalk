@@ -1,8 +1,7 @@
 use crate::config;
-use crate::template::EmailVerify;
 use crate::{
     error::RtwalkError,
-    models::user::{db, secret_db, DBUser, DBUserSecret},
+    models::user::{secret_db, DBUser, DBUserSecret},
     state::State,
 };
 
@@ -21,7 +20,8 @@ use rustis::{
 };
 
 use mongodm::mongo::bson;
-use sailfish::TemplateOnce;
+// use sailfish::TemplateOnce;
+use surrealdb::sql::{Object, Thing};
 use zxcvbn::zxcvbn;
 
 pub struct PasswordValidator<'a>(pub &'a str, pub &'a str);
@@ -58,12 +58,12 @@ pub async fn push_pending(
     // First make sure username is unique
     let mut exists = state
         .db
-        .query("SELECT TRUE FROM user WHERE username = $username")
-        .query("SELECT TRUE FROM user_secret_stream WHERE email = $email")
+        .query("SELECT 1 FROM user WHERE username = $username")
+        .query("SELECT 1 FROM user_secret_stream WHERE email = $email")
         .bind(("username", &username))
         .bind(("email", &email))
         .await?;
-    let username_exists: Option<bool> = exists.take(0)?;
+    let username_exists: Option<u64> = exists.take((0, "1"))?;
     if username_exists.is_some() {
         return Err(RtwalkError::UsernameAlreadyExists);
     }
@@ -74,7 +74,7 @@ pub async fn push_pending(
     }
 
     // Check if user with same email already exists.
-    let email_exists: Option<bool> = exists.take(1)?;
+    let email_exists: Option<u64> = exists.take((1, "1"))?;
     if email_exists.is_some() {
         // Silently drop.
         return Ok(());
@@ -93,13 +93,13 @@ pub async fn push_pending(
     // We have verified and confirmed user is valid, generate verification code.
     let code = rand::thread_rng().gen_range(10000..=99999);
     // Send email to the user
-    let _template = EmailVerify {
-        username: &username,
-        code,
-        site_name: state.site_name,
-    }
-    .render_once()
-    .expect("Can't fail");
+    // let _template = EmailVerify {
+    //     username: &username,
+    //     code,
+    //     site_name: state.site_name,
+    // }
+    // .render_once()
+    // .expect("Can't fail");
     // TODO: Actually send the mail, just printing for now
     // WARNING: Dont forget this ^
     dbg!("Email verification code", code);
@@ -112,7 +112,10 @@ pub async fn push_pending(
     );
     let user = DBUser::new(username, false, None);
     let secret = DBUserSecret {
-        user_id: user.id.clone(),
+        user: Thing {
+            tb: "user".into(),
+            id: user.id.clone().into(),
+        },
         email,
         password: password_hash,
     };
@@ -243,8 +246,31 @@ async fn create_user(
     user: DBUser,
     secret: DBUserSecret,
 ) -> Result<DBUser, RtwalkError> {
-    db!(state.mongo).insert_one(&user, None).await?;
-    secret_db!(state.mongo).insert_one(secret, None).await?;
+    // state.db.query("BEGIN TRANSACTION").query("CREATE user:$id SET username = $username, display_name = $display_name,
+    //         bio = $bio, pfp = $pfp, banner = $banner, created_at = $created_at, modifies_at = $modified_at,
+    //         admin = $admin, bot = $bot, owner = user:$owner").query("CREATE user_secret SET user_id = user:$id,
+    //         email = $email, password = $password").query("COMMIT TRANSACTION").bind([("id", &user.id),
+    //         ("username", &user.username), ("display_name", &user.display_name),
+    //         ("bio", &user.bio)]).await?;
+    state
+        .db
+        .query("BEGIN TRANSACTION")
+        .query("CREATE user CONTENT $user")
+        .query("CREATE user_secret CONTENT $secret")
+        .query("COMMIT TRANSACTION")
+        .bind(("user", &user))
+        .bind(("secret", &secret))
+        .await?;
+    // state
+    //     .db
+    //     .create::<Option<DBUser>>(("user", &user.id))
+    //     .content(&user)
+    //     .await?;
+    // state
+    //     .db
+    //     .create::<Option<DBUserSecret>>("user_secret")
+    //     .content(&secret)
+    //     .await?;
     Ok(user)
 }
 

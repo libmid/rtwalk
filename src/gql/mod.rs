@@ -5,7 +5,7 @@ use crate::{
     models::user::User,
     state::{Auth, State},
 };
-use async_graphql::{Context, Guard, Object, SimpleObject};
+use async_graphql::{Context, Guard, Object, ResultExt, SimpleObject};
 use rustis::{
     client::BatchPreparedCommand,
     commands::{GenericCommands, SetCommands, StringCommands},
@@ -123,7 +123,9 @@ impl MutationRoot {
         // Maximum 1 database and 1 redis query on failure.
         // Also hashing takes place in this step.
         // Also email gets sends here. TODO: Doc if email is sent immediately or pushed to a queue.
-        users::push_pending(state!(ctx), username, email, password).await?;
+        users::push_pending(state!(ctx), username, email, password)
+            .await
+            .extend_err(|_, _| {})?;
         Ok("Verification code sent to email")
     }
 
@@ -138,7 +140,8 @@ impl MutationRoot {
         // Makes 2 database and 3 redis query on success.
         // Makes 3 (max) redis query on fail.
         Ok(users::verify_user(state!(ctx), username, code)
-            .await?
+            .await
+            .extend_err(|_, _| {})?
             .into())
     }
 

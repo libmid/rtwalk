@@ -3,10 +3,11 @@ use crate::utils::get_sys_time_secs;
 use async_graphql::SimpleObject;
 use mongodm::{f, CollectionConfig, Index, IndexOption, Indexes, Model};
 use serde::{Deserialize, Serialize};
+use surrealdb::sql::Thing;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DBUser {
-    pub id: String,
+    pub id: Thing,
     pub username: String,
     pub display_name: String,
     pub bio: Option<String>,
@@ -24,7 +25,10 @@ impl DBUser {
     pub fn new(username: String, bot: bool, owner: Option<String>) -> Self {
         let created_at = get_sys_time_secs();
         DBUser {
-            id: cuid2::cuid(),
+            id: Thing {
+                tb: "user".into(),
+                id: cuid2::cuid().into(),
+            },
             username: username.clone(),
             display_name: username,
             bio: None,
@@ -38,14 +42,6 @@ impl DBUser {
         }
     }
 }
-
-macro_rules! db {
-    ($client: expr) => {{
-        use mongodm::ToRepository;
-        $client.database("rtwalk").repository::<DBUser>()
-    }};
-}
-pub(crate) use db;
 
 macro_rules! secret_db {
     ($client: expr) => {{
@@ -74,7 +70,7 @@ impl Model for DBUser {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DBUserSecret {
-    pub user_id: String,
+    pub user: Thing,
     pub email: String,
     pub password: String,
 }
@@ -112,7 +108,7 @@ pub struct User {
 impl From<DBUser> for User {
     fn from(value: DBUser) -> Self {
         Self {
-            id: value.id,
+            id: value.id.id.to_raw(),
             username: value.username,
             display_name: value.display_name,
             bio: value.bio,

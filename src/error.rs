@@ -27,6 +27,7 @@ pub enum RtwalkError {
 
 impl ErrorExtensions for RtwalkError {
     fn extend(&self) -> async_graphql::Error {
+        dbg!(self);
         async_graphql::Error::new(format!("{}", self)).extend_with(|_err, e| match self {
             RtwalkError::UnauthenticatedRequest => e.set("tp", "UNAUTHENTICATED_REQUEST"),
             RtwalkError::InternalError
