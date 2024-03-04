@@ -1,7 +1,7 @@
 use crate::config;
 use crate::{
     error::RtwalkError,
-    models::user::{secret_db, DBUser, DBUserSecret},
+    models::user::{DBUser, DBUserSecret},
     state::State,
 };
 
@@ -10,7 +10,6 @@ use argon2::{
     Argon2,
 };
 use async_graphql::CustomValidator;
-use mongodm::prelude::*;
 use rand::Rng;
 
 use rustis::commands::GenericCommands;
@@ -19,9 +18,7 @@ use rustis::{
     commands::{SetCondition, SetExpiration, StringCommands},
 };
 
-use mongodm::mongo::bson;
-// use sailfish::TemplateOnce;
-use surrealdb::sql::{Object, Thing};
+use surrealdb::sql::Thing;
 use zxcvbn::zxcvbn;
 
 pub struct PasswordValidator<'a>(pub &'a str, pub &'a str);
@@ -246,12 +243,6 @@ async fn create_user(
     user: DBUser,
     secret: DBUserSecret,
 ) -> Result<DBUser, RtwalkError> {
-    // state.db.query("BEGIN TRANSACTION").query("CREATE user:$id SET username = $username, display_name = $display_name,
-    //         bio = $bio, pfp = $pfp, banner = $banner, created_at = $created_at, modifies_at = $modified_at,
-    //         admin = $admin, bot = $bot, owner = user:$owner").query("CREATE user_secret SET user_id = user:$id,
-    //         email = $email, password = $password").query("COMMIT TRANSACTION").bind([("id", &user.id),
-    //         ("username", &user.username), ("display_name", &user.display_name),
-    //         ("bio", &user.bio)]).await?;
     state
         .db
         .query("BEGIN TRANSACTION")
@@ -261,16 +252,6 @@ async fn create_user(
         .bind(("user", &user))
         .bind(("secret", &secret))
         .await?;
-    // state
-    //     .db
-    //     .create::<Option<DBUser>>(("user", &user.id))
-    //     .content(&user)
-    //     .await?;
-    // state
-    //     .db
-    //     .create::<Option<DBUserSecret>>("user_secret")
-    //     .content(&secret)
-    //     .await?;
     Ok(user)
 }
 
@@ -281,45 +262,26 @@ pub async fn login_user(
     password: String,
 ) -> Result<DBUser, RtwalkError> {
     // First try to find user and their secret
-    let mut user_secret_stream = secret_db!(state.mongo)
-        .aggregate(
-            pipeline![
-                Match: { f!(email in DBUserSecret): &email},
-                Lookup {
-                From: "DBUser",
-                As: "user",
-                LocalField: "user_id",
-                ForeignField: "id",
-                }
-            ],
-            None,
-        )
+    let mut res = state
+        .db
+        .query("SELECT password, user.* AS user FROM user_secret WHERE email = $email")
+        .bind(("email", &email))
         .await?;
-    if let Some(doc) = user_secret_stream.next().await {
-        let mut doc = doc?;
-        let parsed_hash = PasswordHash::new(
-            doc.get("password")
-                .expect("Can't fail")
-                .as_str()
-                .expect("can't fail"),
-        )
-        .expect("Can't fail");
-        if Argon2::default()
-            .verify_password(password.as_bytes(), &parsed_hash)
-            .is_ok()
+    let password_hash: Option<String> = res.take((0, "password"))?;
+    if let Some(password_hash) = password_hash {
+        if tokio::task::spawn_blocking(move || {
+            let parsed_hash = PasswordHash::new(&password_hash).expect("Can't fail");
+            Argon2::default()
+                .verify_password(password.as_bytes(), &parsed_hash)
+                .is_ok()
+        })
+        .await
+        .map_err(|_| RtwalkError::InternalError)?
         {
-            return Ok(bson::from_bson(
-                doc.get_mut("user")
-                    .expect("Can't fail")
-                    .as_array_mut()
-                    .expect("Can't fail")
-                    .pop()
-                    .expect("Can't fail"),
-            )
-            .expect("Can't fail"));
+            let user: Option<DBUser> = res.take((0, "user"))?;
+            return Ok(user.expect("User exists if secret exists"));
         }
-    } else {
-        return Err(RtwalkError::InvalidCredentials);
     }
+
     return Err(RtwalkError::InvalidCredentials);
 }

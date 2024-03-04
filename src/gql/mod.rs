@@ -121,7 +121,7 @@ impl MutationRoot {
     ) -> Result<&str> {
         // On success makes 1 database and 2 redis query.
         // Maximum 1 database and 1 redis query on failure.
-        // Also hashing takes place in this step.
+        // Also hashing takes place in this step. Its normal for latency to be > 1s.
         // Also email gets sends here. TODO: Doc if email is sent immediately or pushed to a queue.
         users::push_pending(state!(ctx), username, email, password)
             .await
@@ -137,8 +137,8 @@ impl MutationRoot {
         username: String,
         code: u64,
     ) -> Result<User> {
-        // Makes 2 database and 3 redis query on success.
-        // Makes 3 (max) redis query on fail.
+        // Makes 1 database and 3 redis query on success.
+        // Makes 3 (max) redis query on failure.
         Ok(users::verify_user(state!(ctx), username, code)
             .await
             .extend_err(|_, _| {})?
@@ -153,6 +153,7 @@ impl MutationRoot {
     ) -> Result<User> {
         // Sends total of 1 database query and 1 redis query on success.
         // 1 database query on failure.
+
         let state = state!(ctx);
         // Just verifies if credentials are corrent. Nothing to do with cookies and auth.
         // Sends 1 database query every time.
@@ -206,15 +207,29 @@ impl MutationRoot {
     #[graphql(guard = "Role::Authenticated")]
     async fn logout(&self, ctx: &Context<'_>) -> Result<bool> {
         let state = state!(ctx);
+        let user = user!(ctx);
         let cookies = cookies!(ctx);
-        let signed_jar = cookies.signed(&state.cookie_key);
-        signed_jar.remove(Cookie::new("session", ""));
+
+        let jar = cookies.signed(&state.cookie_key);
+        let token = jar.get("session").expect("Already authenticated");
+
+        let mut pipeline = state.redis.create_pipeline();
+        pipeline
+            .del(format!("auth_session:{}", token.value()))
+            .forget();
+        pipeline
+            .srem(format!("auth_session_tracker:{}", &user.id), token.value())
+            .forget();
+        pipeline.execute().await?;
+
+        jar.remove(Cookie::new("session", ""));
         Ok(true)
     }
 
-    /// Logs out all active sessions on all devices
+    /// Logs out all active/inactive sessions on all devices
     #[graphql(guard = "Role::Authenticated")]
     async fn logout_all(&self, ctx: &Context<'_>) -> Result<bool> {
+        // Sends 2 redis queries.
         let user = user!(ctx);
         let state = state!(ctx);
 

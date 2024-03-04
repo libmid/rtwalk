@@ -43,14 +43,6 @@ impl DBUser {
     }
 }
 
-macro_rules! secret_db {
-    ($client: expr) => {{
-        use mongodm::ToRepository;
-        $client.database("rtwalk").repository::<DBUserSecret>()
-    }};
-}
-pub(crate) use secret_db;
-
 pub struct DBUserCollConf;
 impl CollectionConfig for DBUserCollConf {
     fn collection_name() -> &'static str {
