@@ -1,4 +1,4 @@
-Rtwalk is a simple forum application written in rust.
+Rtwalk is a simple forum application written in rust using surrealdb.
 
 Some features of rtwalk:
 - Account creation and email verification.
@@ -19,7 +19,7 @@ For a python client/bot library check [rtlink](https://github.com/midatindex0/rt
 ### Usage:
 
 #### Required environment variables:
-- `MONGODB_URL`
+- `DATABASE_URL`
 - `REDIS_URL`
 - `COOKIE_KEY` 64 bytes base64 encoded string
 - `MISOSOUP_URL` (optional) to use VC.

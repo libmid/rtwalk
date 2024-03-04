@@ -17,7 +17,6 @@ use cliparser::{
 };
 use dotenvy::dotenv;
 use gql::{MutationRoot, QueryRoot};
-use mongodm::mongo;
 use rustis::client::Client;
 use state::Auth;
 use surrealdb::{engine::remote::ws::Ws, opt::auth::Database, Surreal};
@@ -89,8 +88,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
     let pubsub_redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
-    let mongo_client =
-        mongo::Client::with_uri_str(&env::var("MONGODB_URL").expect("MONGODB_URL")).await?;
     let surreal_client = Surreal::new::<Ws>("0.0.0.0:8000").await?;
 
     surreal_client
@@ -117,7 +114,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             redis,
             pubsub: pubsub_redis,
             // Its Arc internally so its fine to clone
-            mongo: mongo_client.clone(),
             db: surreal_client,
             cookie_key: Key::from(cookies_key.as_bytes()),
         }),

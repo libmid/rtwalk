@@ -1,7 +1,6 @@
 use super::file::File;
 use crate::utils::get_sys_time_secs;
 use async_graphql::SimpleObject;
-use mongodm::{f, CollectionConfig, Index, IndexOption, Indexes, Model};
 use serde::{Deserialize, Serialize};
 use surrealdb::sql::Thing;
 
@@ -43,43 +42,11 @@ impl DBUser {
     }
 }
 
-pub struct DBUserCollConf;
-impl CollectionConfig for DBUserCollConf {
-    fn collection_name() -> &'static str {
-        "DBUser"
-    }
-
-    fn indexes() -> Indexes {
-        Indexes::new()
-            .with(Index::new(f!(username in DBUser)).with_option(IndexOption::Unique))
-            .with(Index::new(f!(display_name in DBUser)))
-    }
-}
-
-impl Model for DBUser {
-    type CollConf = DBUserCollConf;
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DBUserSecret {
     pub user: Thing,
     pub email: String,
     pub password: String,
-}
-
-pub struct DBUserSecretCollConf;
-impl CollectionConfig for DBUserSecretCollConf {
-    fn collection_name() -> &'static str {
-        "DBUserSecret"
-    }
-
-    fn indexes() -> Indexes {
-        Indexes::new().with(Index::new(f!(email in DBUserSecret)).with_option(IndexOption::Unique))
-    }
-}
-
-impl Model for DBUserSecret {
-    type CollConf = DBUserSecretCollConf;
 }
 
 #[derive(SimpleObject, Serialize, Deserialize, Debug)]

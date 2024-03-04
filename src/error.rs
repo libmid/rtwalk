@@ -12,8 +12,6 @@ pub enum RtwalkError {
     #[error("Username already exists")]
     UsernameAlreadyExists,
     #[error("Internal server error")]
-    MongoError(#[from] mongodm::mongo::error::Error),
-    #[error("Internal server error")]
     DatabaseError(#[from] surrealdb::Error),
     #[error("Internal server error")]
     RedisError(#[from] rustis::Error),
@@ -31,7 +29,6 @@ impl ErrorExtensions for RtwalkError {
         async_graphql::Error::new(format!("{}", self)).extend_with(|_err, e| match self {
             RtwalkError::UnauthenticatedRequest => e.set("tp", "UNAUTHENTICATED_REQUEST"),
             RtwalkError::InternalError
-            | RtwalkError::MongoError(_)
             | RtwalkError::DatabaseError(_)
             | RtwalkError::RedisError(_) => e.set("tp", "INTERNAL_ERROR"),
             RtwalkError::UsernameAlreadyExists => e.set("tp", "USERNAME_ALREADY_EXISTS"),
