@@ -16,12 +16,12 @@ pub struct DBUser {
     pub modified_at: u64,
     pub admin: bool,
     pub bot: bool,
-    pub owner: Option<String>,
+    pub owner: Option<Thing>,
 }
 
 impl DBUser {
     /// Creates a new [`DBUser`].
-    pub fn new(username: String, bot: bool, owner: Option<String>) -> Self {
+    pub fn new(username: String, bot: bool, owner: Option<Thing>) -> Self {
         let created_at = get_sys_time_secs();
         DBUser {
             id: Thing {
@@ -77,7 +77,7 @@ impl From<DBUser> for User {
             modified_at: value.modified_at,
             admin: value.admin,
             bot: value.bot,
-            owner: value.owner,
+            owner: value.owner.map(|i| i.id.to_raw()),
         }
     }
 }

@@ -1,4 +1,4 @@
-use self::users::PasswordValidator;
+use self::users::{create_bot, PasswordValidator};
 use crate::{
     config,
     error::Result,
@@ -10,6 +10,7 @@ use rustis::{
     client::BatchPreparedCommand,
     commands::{GenericCommands, SetCommands, StringCommands},
 };
+use surrealdb::method::Content;
 use tower_cookies::cookie::time::Duration;
 use tower_cookies::{Cookie, Cookies};
 
@@ -48,6 +49,12 @@ pub struct ApiInfo {
     pub bugfix: u16,
     pub rte: &'static str,
     pub vc: &'static str,
+}
+
+#[derive(SimpleObject)]
+struct Bot {
+    token: String,
+    bot: User,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -246,5 +253,20 @@ impl MutationRoot {
             .forget();
         pipeline.execute().await?;
         Ok(true)
+    }
+
+    /// Only humans can create bots
+    /// Returns bot credentials
+    #[graphql(guard = "Role::Human")]
+    async fn create_bot(&self, ctx: &Context<'_>, username: String) -> Result<Bot> {
+        let user = user!(ctx);
+        // 2 database and 1 redis query on sucess
+        let (token, bot) = create_bot(state!(ctx), user.id, username)
+            .await
+            .extend_err(|_, _| {})?;
+        Ok(Bot {
+            token,
+            bot: bot.into(),
+        })
     }
 }

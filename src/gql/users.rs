@@ -10,6 +10,7 @@ use argon2::{
     Argon2,
 };
 use async_graphql::CustomValidator;
+use cuid2::cuid;
 use rand::Rng;
 
 use rustis::commands::GenericCommands;
@@ -86,7 +87,7 @@ pub async fn push_pending(
             .to_string()
     })
     .await
-    .map_err(|_| RtwalkError::InternalError)?;
+    .map_err(|e| RtwalkError::InternalError(e.into()))?;
     // We have verified and confirmed user is valid, generate verification code.
     let code = rand::thread_rng().gen_range(10000..=99999);
     // Send email to the user
@@ -237,7 +238,6 @@ pub async fn verify_user(
     Ok(user)
 }
 
-#[inline]
 async fn create_user(
     state: &State,
     user: DBUser,
@@ -253,6 +253,64 @@ async fn create_user(
         .bind(("secret", &secret))
         .await?;
     Ok(user)
+}
+
+pub async fn create_bot(
+    state: &State,
+    owner_id: String,
+    username: String,
+) -> Result<(String, DBUser), RtwalkError> {
+    let mut exists = state
+        .db
+        .query("SELECT 1 FROM user WHERE username = $username")
+        .bind(("username", &username))
+        .await?;
+    let username_exists: Option<u64> = exists.take((0, "1"))?;
+    if username_exists.is_some() {
+        return Err(RtwalkError::UsernameAlreadyExists);
+    }
+    // Make sure no one is trying to verify with the same suername
+    let user: Option<String> = state.redis.get(format!("pending:{}", &username)).await?;
+    if user.is_some() {
+        return Err(RtwalkError::UsernameAlreadyExists);
+    }
+
+    let email = cuid();
+    let password = cuid();
+
+    let creds = format!("{}@{}", &email, &password);
+
+    let password_hash = tokio::task::spawn_blocking(move || {
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        argon2
+            .hash_password(password.as_bytes(), &salt)
+            .expect("cant fail")
+            .to_string()
+    })
+    .await
+    .map_err(|e| RtwalkError::InternalError(e.into()))?;
+
+    let bot = DBUser::new(
+        username,
+        true,
+        Some(Thing {
+            tb: "user".into(),
+            id: owner_id.into(),
+        }),
+    );
+    let secret = DBUserSecret {
+        user: Thing {
+            tb: "user".into(),
+            id: bot.id.clone().into(),
+        },
+        email,
+        password: password_hash,
+    };
+
+    let bot = create_user(state, bot, secret).await?;
+
+    Ok((creds, bot))
 }
 
 // Returns the user if creds are correct, else return error
@@ -276,7 +334,7 @@ pub async fn login_user(
                 .is_ok()
         })
         .await
-        .map_err(|_| RtwalkError::InternalError)?
+        .map_err(|e| RtwalkError::InternalError(e.into()))?
         {
             let user: Option<DBUser> = res.take((0, "user"))?;
             return Ok(user.expect("User exists if secret exists"));
