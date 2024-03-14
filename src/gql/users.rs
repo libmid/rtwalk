@@ -83,11 +83,11 @@ pub async fn push_pending(
         let argon2 = Argon2::default();
         argon2
             .hash_password(password.as_bytes(), &salt)
-            .expect("cant fail")
-            .to_string()
+            .map_err(|e| RtwalkError::InternalError(e.into()))
+            .map(|h| h.to_string())
     })
     .await
-    .map_err(|e| RtwalkError::InternalError(e.into()))?;
+    .map_err(|e| RtwalkError::InternalError(e.into()))??;
     // We have verified and confirmed user is valid, generate verification code.
     let code = rand::thread_rng().gen_range(10000..=99999);
     // Send email to the user
@@ -122,7 +122,9 @@ pub async fn push_pending(
     pipeline
         .set_with_options(
             pending_user_key,
-            serde_json::to_string(&user).expect("Unexpected serialization error of DBUser"),
+            serde_json::to_string(&user).map_err(|e| {
+                RtwalkError::ImpossibleError("Serialization of DBUser can't fail", Some(e.into()))
+            })?,
             SetCondition::None,
             SetExpiration::Ex(config::VERIFICATION_CODE_EXPIERY_SECONDS),
             false,
@@ -131,7 +133,12 @@ pub async fn push_pending(
     pipeline
         .set_with_options(
             secret_key,
-            serde_json::to_string(&secret).expect("Can't fail"),
+            serde_json::to_string(&secret).map_err(|e| {
+                RtwalkError::ImpossibleError(
+                    "Serialization of DBUserSecret can't fail",
+                    Some(e.into()),
+                )
+            })?,
             SetCondition::None,
             SetExpiration::Ex(config::VERIFICATION_CODE_EXPIERY_SECONDS),
             false,
@@ -169,27 +176,68 @@ pub async fn verify_user(
     code: u64,
 ) -> Result<DBUser, RtwalkError> {
     let user: Option<String> = state.redis.get(format!("pending:{}", &username)).await?;
-    if user.is_none() {
-        return Err(RtwalkError::VerificationCodeExpired);
-    }
-    let user = user.expect("Can't fail");
-    let mut pipeline = state.redis.create_pipeline();
-    pipeline
-        .get::<_, ()>(format!("remaining_tries:{}", &username))
-        .queue();
-    pipeline
-        .get::<_, ()>(format!("pending_secret:{}", &username))
-        .queue();
-    pipeline
-        .get::<_, ()>(format!("verification_code:{}", &username))
-        .queue();
+    if user.is_none() {}
+    if let Some(user) = user {
+        let mut pipeline = state.redis.create_pipeline();
+        pipeline
+            .get::<_, ()>(format!("remaining_tries:{}", &username))
+            .queue();
+        pipeline
+            .get::<_, ()>(format!("pending_secret:{}", &username))
+            .queue();
+        pipeline
+            .get::<_, ()>(format!("verification_code:{}", &username))
+            .queue();
 
-    // Can this fail? If TTL expires between user fetch and this then yes,
-    // In that case we say its an internal server error.
-    let (remaining_tries, pending_secret, verification_code): (u64, String, u64) =
-        pipeline.execute().await?;
-    if remaining_tries == 0 {
-        // Delete keys
+        // Can this fail? If TTL expires between user fetch and this then yes,
+        // In that case we say its an internal server error.
+        let (remaining_tries, pending_secret, verification_code): (u64, String, u64) =
+            pipeline.execute().await?;
+        if remaining_tries == 0 {
+            // Delete keys
+            let mut pipeline = state.redis.create_pipeline();
+            pipeline.del(format!("pending:{}", &username)).forget();
+            pipeline
+                .del(format!("remaining_tries:{}", &username))
+                .forget();
+            pipeline
+                .del(format!("pending_secret:{}", &username))
+                .forget();
+            pipeline
+                .del(format!("verification_code:{}", &username))
+                .forget();
+            pipeline.execute().await?;
+            return Err(RtwalkError::VerificationCodeExpired);
+        }
+
+        // Compare verification code
+        // TODO: Maybe change this to be black box comparison?
+        if code != verification_code {
+            // TODO: This might create a key without TTL if remaining_tries has already expired
+            state
+                .redis
+                .decr(format!("remaining_tries:{}", &username))
+                .await?;
+            return Err(RtwalkError::InvalidVerificationCode);
+        }
+        // The user is REAL, make his account
+        let user = create_user(
+            state,
+            serde_json::from_str(&user).map_err(|e| {
+                RtwalkError::ImpossibleError(
+                    "User serialized by server can't be invalid",
+                    Some(e.into()),
+                )
+            })?,
+            serde_json::from_str(&pending_secret).map_err(|e| {
+                RtwalkError::ImpossibleError(
+                    "UserSecret serialized by server can't be invalid",
+                    Some(e.into()),
+                )
+            })?,
+        )
+        .await?;
+        // Delete keys.
         let mut pipeline = state.redis.create_pipeline();
         pipeline.del(format!("pending:{}", &username)).forget();
         pipeline
@@ -202,40 +250,10 @@ pub async fn verify_user(
             .del(format!("verification_code:{}", &username))
             .forget();
         pipeline.execute().await?;
-        return Err(RtwalkError::VerificationCodeExpired);
+        // We are done
+        return Ok(user);
     }
-    // Compare verification code
-    // TODO: Maybe change this to be black box comparison?
-    if code != verification_code {
-        // TODO: This might create a key without TTL if remaining_tries has already expired
-        state
-            .redis
-            .decr(format!("remaining_tries:{}", &username))
-            .await?;
-        return Err(RtwalkError::InvalidVerificationCode);
-    }
-    // The user is REAL, make his account
-    let user = create_user(
-        state,
-        serde_json::from_str(&user).expect("Serialized by server. Can't fail."),
-        serde_json::from_str(&pending_secret).expect("Serialized by server. Can't fail."),
-    )
-    .await?;
-    // Delete keys.
-    let mut pipeline = state.redis.create_pipeline();
-    pipeline.del(format!("pending:{}", &username)).forget();
-    pipeline
-        .del(format!("remaining_tries:{}", &username))
-        .forget();
-    pipeline
-        .del(format!("pending_secret:{}", &username))
-        .forget();
-    pipeline
-        .del(format!("verification_code:{}", &username))
-        .forget();
-    pipeline.execute().await?;
-    // We are done
-    Ok(user)
+    Err(RtwalkError::VerificationCodeExpired)
 }
 
 async fn create_user(
@@ -285,11 +303,11 @@ pub async fn create_bot(
         let argon2 = Argon2::default();
         argon2
             .hash_password(password.as_bytes(), &salt)
-            .expect("cant fail")
-            .to_string()
+            .map(|p| p.to_string())
+            .map_err(|e| RtwalkError::InternalError(e.into()))
     })
     .await
-    .map_err(|e| RtwalkError::InternalError(e.into()))?;
+    .map_err(|e| RtwalkError::InternalError(e.into()))??;
 
     let bot = DBUser::new(
         username,
@@ -328,16 +346,27 @@ pub async fn login_user(
     let password_hash: Option<String> = res.take((0, "password"))?;
     if let Some(password_hash) = password_hash {
         if tokio::task::spawn_blocking(move || {
-            let parsed_hash = PasswordHash::new(&password_hash).expect("Can't fail");
-            Argon2::default()
-                .verify_password(password.as_bytes(), &parsed_hash)
-                .is_ok()
+            PasswordHash::new(&password_hash)
+                .map_err(|e| {
+                    RtwalkError::ImpossibleError(
+                        "Hash created by server can't be invalid",
+                        Some(e.into()),
+                    )
+                })
+                .map(|h| {
+                    Argon2::default()
+                        .verify_password(password.as_bytes(), &h)
+                        .is_ok()
+                })
         })
         .await
-        .map_err(|e| RtwalkError::InternalError(e.into()))?
+        .map_err(|e| RtwalkError::InternalError(e.into()))??
         {
             let user: Option<DBUser> = res.take((0, "user"))?;
-            return Ok(user.expect("User exists if secret exists"));
+            return Ok(user.ok_or(RtwalkError::ImpossibleError(
+                "Secret exists but user doesnt",
+                None,
+            ))?);
         }
     }
 

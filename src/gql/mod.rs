@@ -1,7 +1,7 @@
 use self::users::{create_bot, PasswordValidator};
 use crate::{
     config,
-    error::Result,
+    error::{Result, RtwalkError},
     models::user::User,
     state::{Auth, State},
 };
@@ -10,7 +10,6 @@ use rustis::{
     client::BatchPreparedCommand,
     commands::{GenericCommands, SetCommands, StringCommands},
 };
-use surrealdb::method::Content;
 use tower_cookies::cookie::time::Duration;
 use tower_cookies::{Cookie, Cookies};
 
@@ -30,12 +29,7 @@ macro_rules! cookies {
 
 macro_rules! user {
     ($ctx: expr) => {
-        $ctx.data_unchecked::<Auth>()
-            .0
-            .lock()
-            .unwrap()
-            .take()
-            .unwrap()
+        $ctx.data_unchecked::<Auth>().0.take().unwrap()
     };
 }
 
@@ -77,8 +71,12 @@ impl Guard for Role {
                 .get(format!("auth_session:{}", token.value()))
                 .await?;
             if let Some(user) = user {
-                let user: crate::models::user::User =
-                    serde_json::from_str(&user).expect("Can't fail");
+                let user: crate::models::user::User = serde_json::from_str(&user).map_err(|e| {
+                    RtwalkError::ImpossibleError(
+                        "Deserialization of User can't fail",
+                        Some(e.into()),
+                    )
+                })?;
                 let permitted = match self {
                     Self::Admin => user.admin,
                     Self::Bot => user.bot,
@@ -86,7 +84,7 @@ impl Guard for Role {
                     Self::Authenticated => true,
                 };
                 if permitted {
-                    *ctx.data_unchecked::<Auth>().0.lock().unwrap() = Some(user);
+                    *ctx.data_unchecked::<Auth>().0.borrow_mut() = Some(user);
                     return Ok(());
                 }
             }
@@ -171,7 +169,9 @@ impl MutationRoot {
         pipeline
             .set_with_options(
                 format!("auth_session:{}", &token),
-                serde_json::to_string(&user).expect("Can't fail"),
+                serde_json::to_string(&user).map_err(|e| {
+                    RtwalkError::ImpossibleError("Serialization of User can't fail", Some(e.into()))
+                })?,
                 rustis::commands::SetCondition::None,
                 rustis::commands::SetExpiration::Ex(if user.bot {
                     config::BOT_SESSION_EXPIERY
@@ -218,7 +218,13 @@ impl MutationRoot {
         let cookies = cookies!(ctx);
 
         let jar = cookies.signed(&state.cookie_key);
-        let token = jar.get("session").expect("Already authenticated");
+        let token = jar
+            .get("session")
+            .ok_or(RtwalkError::ImpossibleError(
+                "Guard already proves invarient that session token exists",
+                None,
+            ))
+            .extend_err(|_, _| {})?;
 
         let mut pipeline = state.redis.create_pipeline();
         pipeline
@@ -268,5 +274,16 @@ impl MutationRoot {
             token,
             bot: bot.into(),
         })
+    }
+
+    // #[graphql(guard = "Role::Human")]
+    async fn login_as_bot(&self, ctx: &Context<'_>, bot_id: String) -> Result<User> {
+        {
+            let state = state!(ctx);
+            verify_bot_belongs_to_user(state)
+                .await
+                .extend_err(|_, _| {})?;
+        }
+        todo!()
     }
 }
