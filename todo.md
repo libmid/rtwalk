@@ -1,10 +1,12 @@
-- [x] Create user account
+- [x] Create user account*
 - [x] Login
 - [x] Logout
 - [x] All session logout
 - [x] Create bot account
 - [x] Login as bot
-- [ ] Reset password
+- [ ] Reset password*
 - [ ] Reset bot token
 - [x] Logout bot from user account
 - [ ] Update user
+
+\*sending email not implemented
