@@ -28,9 +28,14 @@ macro_rules! cookies {
 }
 
 macro_rules! user {
-    ($ctx: expr) => {
-        $ctx.data_unchecked::<Auth>().0.take().unwrap()
-    };
+    ($ctx: expr) => {{
+        $ctx.data_unchecked::<Auth>()
+            .0
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+    }};
 }
 
 pub struct QueryRoot;
@@ -69,14 +74,18 @@ impl Guard for Role {
             let user: Option<String> = state
                 .redis
                 .get(format!("auth_session:{}", token.value()))
-                .await?;
+                .await
+                .map_err(|e| RtwalkError::RedisError(e))
+                .extend_err(|_, _| {})?;
             if let Some(user) = user {
-                let user: crate::models::user::User = serde_json::from_str(&user).map_err(|e| {
-                    RtwalkError::ImpossibleError(
-                        "Deserialization of User can't fail",
-                        Some(e.into()),
-                    )
-                })?;
+                let user: crate::models::user::User = serde_json::from_str(&user)
+                    .map_err(|e| {
+                        RtwalkError::ImpossibleError(
+                            "Deserialization of User can't fail",
+                            Some(e.into()),
+                        )
+                    })
+                    .extend_err(|_, _| {})?;
                 let permitted = match self {
                     Self::Admin => user.admin,
                     Self::Bot => user.bot,
@@ -84,7 +93,7 @@ impl Guard for Role {
                     Self::Authenticated => true,
                 };
                 if permitted {
-                    *ctx.data_unchecked::<Auth>().0.borrow_mut() = Some(user);
+                    *ctx.data_unchecked::<Auth>().0.lock().unwrap() = Some(user);
                     return Ok(());
                 }
             }
@@ -162,16 +171,24 @@ impl MutationRoot {
         let state = state!(ctx);
         // Just verifies if credentials are corrent. Nothing to do with cookies and auth.
         // Sends 1 database query every time.
-        let user: User = users::login_user(state, email, password).await?.into();
+        let user: User = users::login_user(state, email, password)
+            .await
+            .extend_err(|_, _| {})?
+            .into();
 
         let token = cuid2::cuid();
         let mut pipeline = state.redis.create_pipeline();
         pipeline
             .set_with_options(
                 format!("auth_session:{}", &token),
-                serde_json::to_string(&user).map_err(|e| {
-                    RtwalkError::ImpossibleError("Serialization of User can't fail", Some(e.into()))
-                })?,
+                serde_json::to_string(&user)
+                    .map_err(|e| {
+                        RtwalkError::ImpossibleError(
+                            "Serialization of User can't fail",
+                            Some(e.into()),
+                        )
+                    })
+                    .extend_err(|_, _| {})?,
                 rustis::commands::SetCondition::None,
                 rustis::commands::SetExpiration::Ex(if user.bot {
                     config::BOT_SESSION_EXPIERY
@@ -195,7 +212,11 @@ impl MutationRoot {
                 rustis::commands::ExpireOption::None,
             )
             .forget();
-        pipeline.execute().await?;
+        pipeline
+            .execute()
+            .await
+            .map_err(|e| RtwalkError::RedisError(e))
+            .extend_err(|_, _| {})?;
         let cookies = cookies!(ctx);
         let signed_jar = cookies.signed(&state.cookie_key);
         let mut cookie = Cookie::new("session", token);
@@ -233,7 +254,11 @@ impl MutationRoot {
         pipeline
             .srem(format!("auth_session_tracker:{}", &user.id), token.value())
             .forget();
-        pipeline.execute().await?;
+        pipeline
+            .execute()
+            .await
+            .map_err(|e| RtwalkError::RedisError(e))
+            .extend_err(|_, _| {})?;
 
         jar.remove(Cookie::new("session", ""));
         Ok(true)
@@ -245,11 +270,14 @@ impl MutationRoot {
         // Sends 2 redis queries.
         let user = user!(ctx);
         let state = state!(ctx);
+        let cookies = cookies!(ctx);
 
         let sessions: Vec<String> = state
             .redis
             .smembers(format!("auth_session_tracker:{}", &user.id))
-            .await?;
+            .await
+            .map_err(|e| RtwalkError::RedisError(e))
+            .extend_err(|_, _| {})?;
         let mut pipeline = state.redis.create_pipeline();
         for session in sessions {
             pipeline.del(format!("auth_session:{}", session)).forget();
@@ -257,7 +285,15 @@ impl MutationRoot {
         pipeline
             .del(format!("auth_session_tracker:{}", &user.id))
             .forget();
-        pipeline.execute().await?;
+        pipeline
+            .execute()
+            .await
+            .map_err(|e| RtwalkError::RedisError(e))
+            .extend_err(|_, _| {})?;
+
+        let jar = cookies.signed(&state.cookie_key);
+        jar.remove(Cookie::new("session", ""));
+
         Ok(true)
     }
 
@@ -276,14 +312,131 @@ impl MutationRoot {
         })
     }
 
-    // #[graphql(guard = "Role::Human")]
+    #[graphql(guard = "Role::Human")]
     async fn login_as_bot(&self, ctx: &Context<'_>, bot_id: String) -> Result<User> {
+        let user = user!(ctx);
+        let state = state!(ctx);
+        let cookies = cookies!(ctx);
+        let bot: User = users::verify_bot_belongs_to_user(state, &user.id, &bot_id)
+            .await
+            .extend_err(|_, _| {})?
+            .into();
         {
-            let state = state!(ctx);
-            verify_bot_belongs_to_user(state)
-                .await
+            // logout user
+            let jar = cookies.signed(&state.cookie_key);
+            let token = jar
+                .get("session")
+                .ok_or(RtwalkError::ImpossibleError(
+                    "Guard already proves invarient that session token exists",
+                    None,
+                ))
                 .extend_err(|_, _| {})?;
+
+            let mut pipeline = state.redis.create_pipeline();
+            pipeline
+                .del(format!("auth_session:{}", token.value()))
+                .forget();
+            pipeline
+                .srem(format!("auth_session_tracker:{}", &bot.id), token.value())
+                .forget();
+            pipeline
+                .execute()
+                .await
+                .map_err(|e| RtwalkError::RedisError(e))
+                .extend_err(|_, _| {})?;
+
+            jar.remove(Cookie::new("session", ""));
         }
-        todo!()
+        {
+            // login bot
+            let token = cuid2::cuid();
+            let mut pipeline = state.redis.create_pipeline();
+            pipeline
+                .set_with_options(
+                    format!("auth_session:{}", &token),
+                    serde_json::to_string(&bot)
+                        .map_err(|e| {
+                            RtwalkError::ImpossibleError(
+                                "Serialization of bot can't fail",
+                                Some(e.into()),
+                            )
+                        })
+                        .extend_err(|_, _| {})?,
+                    rustis::commands::SetCondition::None,
+                    rustis::commands::SetExpiration::Ex(if bot.bot {
+                        config::BOT_SESSION_EXPIERY
+                    } else {
+                        config::SESSION_EXPIERY_SECONDS
+                    }),
+                    false,
+                )
+                .forget();
+            pipeline
+                .sadd(format!("auth_session_tracker:{}", &bot.id), &token)
+                .forget();
+            pipeline
+                .expire(
+                    format!("auth_session_tracker:{}", &bot.id),
+                    if bot.bot {
+                        config::BOT_SESSION_EXPIERY
+                    } else {
+                        config::SESSION_EXPIERY_SECONDS
+                    },
+                    rustis::commands::ExpireOption::None,
+                )
+                .forget();
+            pipeline
+                .execute()
+                .await
+                .map_err(|e| RtwalkError::RedisError(e))
+                .extend_err(|_, _| {})?;
+            let signed_jar = cookies.signed(&state.cookie_key);
+            let mut cookie = Cookie::new("session", token);
+            cookie.set_max_age(Duration::seconds(if bot.bot {
+                config::BOT_SESSION_EXPIERY as i64
+            } else {
+                config::SESSION_EXPIERY_SECONDS as i64
+            }));
+            cookie.set_secure(true);
+            signed_jar.add(cookie);
+
+            Ok(bot)
+        }
+    }
+
+    #[graphql(guard = "Role::Human")]
+    async fn logout_all_bot(&self, ctx: &Context<'_>, bot_id: String) -> Result<bool> {
+        let user = user!(ctx);
+        let state = state!(ctx);
+        let cookies = cookies!(ctx);
+
+        let bot: User = users::verify_bot_belongs_to_user(state, &user.id, &bot_id)
+            .await
+            .extend_err(|_, _| {})?
+            .into();
+
+        let sessions: Vec<String> = state
+            .redis
+            .smembers(format!("auth_session_tracker:{}", &bot.id))
+            .await
+            .map_err(|e| RtwalkError::RedisError(e))
+            .extend_err(|_, _| {})?;
+        let mut pipeline = state.redis.create_pipeline();
+        for session in sessions {
+            pipeline.del(format!("auth_session:{}", session)).forget();
+        }
+        pipeline
+            .del(format!("auth_session_tracker:{}", &bot.id))
+            .forget();
+        pipeline
+            .execute()
+            .await
+            .map_err(|e| RtwalkError::RedisError(e))
+            .extend_err(|_, _| {})?;
+
+        let jar = cookies.signed(&state.cookie_key);
+        jar.remove(Cookie::new("session", ""));
+
+        Ok(true)
     }
 }

@@ -372,3 +372,31 @@ pub async fn login_user(
 
     return Err(RtwalkError::InvalidCredentials);
 }
+
+pub async fn verify_bot_belongs_to_user(
+    state: &State,
+    user_id: &str,
+    bot_id: &str,
+) -> Result<DBUser, RtwalkError> {
+    let mut bot = state
+        .db
+        .query("SELECT * FROM user WHERE id = $id")
+        .bind((
+            "id",
+            Thing {
+                tb: "user".into(),
+                id: bot_id.into(),
+            },
+        ))
+        .await?;
+    let bot: Option<DBUser> = bot.take(0)?;
+
+    if let Some(bot) = bot {
+        if let Some(ref owner) = bot.owner {
+            if owner.id.to_raw() == user_id {
+                return Ok(bot);
+            }
+        }
+    }
+    Err(RtwalkError::UnauhorizedBotOwner)
+}

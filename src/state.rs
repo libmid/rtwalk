@@ -1,4 +1,7 @@
-use std::{cell::RefCell, ops::Deref, sync::Arc};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
 use surrealdb::{engine::remote::ws::Client, Surreal};
 
@@ -25,7 +28,4 @@ impl Deref for State {
 }
 
 #[derive(Default)]
-pub struct Auth(pub RefCell<Option<User>>);
-
-// safety: Invarient holds because queries are executed synchronously
-unsafe impl Sync for Auth {}
+pub struct Auth(pub Mutex<Option<User>>);

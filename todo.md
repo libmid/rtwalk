@@ -3,9 +3,8 @@
 - [x] Logout
 - [x] All session logout
 - [x] Create bot account
-- [ ] Login as bot
+- [x] Login as bot
 - [ ] Reset password
 - [ ] Reset bot token
-- [ ] Maybe allow sessionless authentication with paseto for bots?
-- [ ] Logout bot from user account
+- [x] Logout bot from user account
 - [ ] Update user

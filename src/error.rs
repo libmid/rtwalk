@@ -7,6 +7,8 @@ pub type Result<T> = async_graphql::Result<T>;
 pub enum RtwalkError {
     #[error("Unauthenticated request")]
     UnauthenticatedRequest,
+    #[error("Unauthorized bot owner")]
+    UnauhorizedBotOwner,
     #[error("Internal server error")]
     InternalError(#[from] anyhow::Error),
     #[error("Internal server error")]
@@ -38,6 +40,7 @@ impl ErrorExtensions for RtwalkError {
             RtwalkError::VerificationCodeExpired => e.set("tp", "VERIFICATION_CODE_EXPIRED"),
             RtwalkError::InvalidVerificationCode => e.set("tp", "INVALID_VERIFICATION_CODE"),
             RtwalkError::InvalidCredentials => e.set("tp", "INVALID_CREDENTIALS"),
+            RtwalkError::UnauhorizedBotOwner => e.set("tp", "UNAUTHORIZED_BOT_OWNER"),
         })
     }
 }
