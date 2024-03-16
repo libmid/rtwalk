@@ -19,6 +19,7 @@ use rustis::{
     commands::{SetCondition, SetExpiration, StringCommands},
 };
 
+use surrealdb::engine::remote::ws::Client;
 use surrealdb::sql::Thing;
 use zxcvbn::zxcvbn;
 
@@ -47,7 +48,7 @@ impl<'a> CustomValidator<String> for PasswordValidator<'a> {
 }
 
 pub async fn push_pending(
-    state: &State,
+    state: &State<Client>,
     username: String,
     email: String,
     password: String,
@@ -57,7 +58,7 @@ pub async fn push_pending(
     let mut exists = state
         .db
         .query("SELECT 1 FROM user WHERE username = $username")
-        .query("SELECT 1 FROM user_secret_stream WHERE email = $email")
+        .query("SELECT 1 FROM user_secret WHERE email = $email")
         .bind(("username", &username))
         .bind(("email", &email))
         .await?;
@@ -171,7 +172,7 @@ pub async fn push_pending(
 // TODO: There are a bunch of seperate string allocation for keys
 // maybe do those at once?
 pub async fn verify_user(
-    state: &State,
+    state: &State<Client>,
     username: String,
     code: u64,
 ) -> Result<DBUser, RtwalkError> {
@@ -257,7 +258,7 @@ pub async fn verify_user(
 }
 
 async fn create_user(
-    state: &State,
+    state: &State<Client>,
     user: DBUser,
     secret: DBUserSecret,
 ) -> Result<DBUser, RtwalkError> {
@@ -274,7 +275,7 @@ async fn create_user(
 }
 
 pub async fn create_bot(
-    state: &State,
+    state: &State<Client>,
     owner_id: String,
     username: String,
 ) -> Result<(String, DBUser), RtwalkError> {
@@ -333,7 +334,7 @@ pub async fn create_bot(
 
 // Returns the user if creds are correct, else return error
 pub async fn login_user(
-    state: &State,
+    state: &State<Client>,
     email: String,
     password: String,
 ) -> Result<DBUser, RtwalkError> {
@@ -374,7 +375,7 @@ pub async fn login_user(
 }
 
 pub async fn verify_bot_belongs_to_user(
-    state: &State,
+    state: &State<Client>,
     user_id: &str,
     bot_id: &str,
 ) -> Result<DBUser, RtwalkError> {
@@ -399,4 +400,47 @@ pub async fn verify_bot_belongs_to_user(
         }
     }
     Err(RtwalkError::UnauhorizedBotOwner)
+}
+
+pub async fn reset_bot_password(
+    state: &State<Client>,
+    bot_id: &str,
+) -> Result<String, RtwalkError> {
+    let password = cuid();
+
+    let creds = format!("@{}", &password);
+
+    let password_hash = tokio::task::spawn_blocking(move || {
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map(|p| p.to_string())
+            .map_err(|e| RtwalkError::InternalError(e.into()))
+    })
+    .await
+    .map_err(|e| RtwalkError::InternalError(e.into()))??;
+
+    let mut res = state
+        .db
+        .query("UPDATE user_secret SET password = $password_hash WHERE user = $user RETURN email")
+        .bind(("password_hash", password_hash))
+        .bind((
+            "user",
+            Thing {
+                tb: "user".into(),
+                id: bot_id.into(),
+            },
+        ))
+        .await?;
+
+    let mut email =
+        res.take::<Option<String>>((0, "email"))?
+            .ok_or(RtwalkError::ImpossibleError(
+                "Email exists if secret exists",
+                None,
+            ))?;
+    email.push_str(&creds);
+
+    Ok(email)
 }

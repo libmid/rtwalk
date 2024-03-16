@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
     let pubsub_redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
-    let surreal_client = Surreal::new::<Ws>("0.0.0.0:8000").await?;
+    let surreal_client = Surreal::new::<Ws>(env::var("DB_URL").expect("DB_URL")).await?;
 
     surreal_client
         .signin(Database {

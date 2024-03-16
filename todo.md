@@ -5,8 +5,9 @@
 - [x] Create bot account
 - [x] Login as bot
 - [ ] Reset password*
-- [ ] Reset bot token
+- [x] Reset bot token
 - [x] Logout bot from user account
 - [ ] Update user
+- [ ] Write tests
 
 \*sending email not implemented

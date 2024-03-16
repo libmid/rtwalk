@@ -5,11 +5,12 @@ use crate::{
     models::user::User,
     state::{Auth, State},
 };
-use async_graphql::{Context, Guard, Object, ResultExt, SimpleObject};
+use async_graphql::{Context, ErrorExtensions, Guard, Object, ResultExt, SimpleObject};
 use rustis::{
     client::BatchPreparedCommand,
     commands::{GenericCommands, SetCommands, StringCommands},
 };
+use surrealdb::engine::remote::ws::Client;
 use tower_cookies::cookie::time::Duration;
 use tower_cookies::{Cookie, Cookies};
 
@@ -17,7 +18,7 @@ pub mod users;
 
 macro_rules! state {
     ($ctx: expr) => {
-        $ctx.data_unchecked::<State>()
+        $ctx.data_unchecked::<State<Client>>()
     };
 }
 
@@ -58,10 +59,11 @@ struct Bot {
 
 #[derive(Eq, PartialEq, Copy, Clone)]
 enum Role {
-    Bot,           // Only bot
-    Authenticated, // Any authenticated user
-    Human,         // Only human
-    Admin,         // Only admin
+    Bot,             // Only bot
+    UnAuthenticated, // Only unauthenticated
+    Authenticated,   // Any authenticated user
+    Human,           // Only human
+    Admin,           // Only admin
 }
 
 impl Guard for Role {
@@ -91,6 +93,7 @@ impl Guard for Role {
                     Self::Bot => user.bot,
                     Self::Human => !user.bot,
                     Self::Authenticated => true,
+                    Self::UnAuthenticated => unreachable!(),
                 };
                 if permitted {
                     *ctx.data_unchecked::<Auth>().0.lock().unwrap() = Some(user);
@@ -98,7 +101,12 @@ impl Guard for Role {
                 }
             }
         }
-        return Err(crate::error::RtwalkError::UnauthenticatedRequest.into());
+        if *self == Self::UnAuthenticated {
+            return Ok(());
+        }
+        return Err(crate::error::RtwalkError::UnauthenticatedRequest
+            .extend()
+            .into());
     }
 }
 
@@ -117,7 +125,7 @@ impl QueryRoot {
 
 #[Object]
 impl MutationRoot {
-    /// Account rgistration process starts here
+    /// Account rgistration process starts here. Sends a code to your email.
     async fn create_user(
         &self,
         ctx: &Context<'_>,
@@ -159,6 +167,7 @@ impl MutationRoot {
             .into())
     }
 
+    #[graphql(guard = "Role::UnAuthenticated")]
     async fn login(
         &self,
         ctx: &Context<'_>,
@@ -297,8 +306,8 @@ impl MutationRoot {
         Ok(true)
     }
 
-    /// Only humans can create bots
-    /// Returns bot credentials
+    /// Only humans can create bots.
+    /// Returns bot credentials.
     #[graphql(guard = "Role::Human")]
     async fn create_bot(&self, ctx: &Context<'_>, username: String) -> Result<Bot> {
         let user = user!(ctx);
@@ -312,6 +321,7 @@ impl MutationRoot {
         })
     }
 
+    /// Only non-bot accounts who own the bot can do this.
     #[graphql(guard = "Role::Human")]
     async fn login_as_bot(&self, ctx: &Context<'_>, bot_id: String) -> Result<User> {
         let user = user!(ctx);
@@ -337,7 +347,7 @@ impl MutationRoot {
                 .del(format!("auth_session:{}", token.value()))
                 .forget();
             pipeline
-                .srem(format!("auth_session_tracker:{}", &bot.id), token.value())
+                .srem(format!("auth_session_tracker:{}", &user.id), token.value())
                 .forget();
             pipeline
                 .execute()
@@ -404,11 +414,11 @@ impl MutationRoot {
         }
     }
 
+    /// Only non-bot accounts who own the bot can do this.
     #[graphql(guard = "Role::Human")]
     async fn logout_all_bot(&self, ctx: &Context<'_>, bot_id: String) -> Result<bool> {
         let user = user!(ctx);
         let state = state!(ctx);
-        let cookies = cookies!(ctx);
 
         let bot: User = users::verify_bot_belongs_to_user(state, &user.id, &bot_id)
             .await
@@ -434,9 +444,53 @@ impl MutationRoot {
             .map_err(|e| RtwalkError::RedisError(e))
             .extend_err(|_, _| {})?;
 
-        let jar = cookies.signed(&state.cookie_key);
-        jar.remove(Cookie::new("session", ""));
-
         Ok(true)
+    }
+
+    /// Only non-bot accounts who own the bot can do this.
+    #[graphql(guard = "Role::Human")]
+    async fn reset_bot_token(&self, ctx: &Context<'_>, bot_id: String) -> Result<Bot> {
+        let user = user!(ctx);
+        let state = state!(ctx);
+
+        let bot: User = users::verify_bot_belongs_to_user(state, &user.id, &bot_id)
+            .await
+            .extend_err(|_, _| {})?
+            .into();
+
+        // reset token
+        let token = users::reset_bot_password(state, &bot.id)
+            .await
+            .extend_err(|_, _| {})?;
+
+        // logout the bot
+        let sessions: Vec<String> = state
+            .redis
+            .smembers(format!("auth_session_tracker:{}", &bot.id))
+            .await
+            .map_err(|e| RtwalkError::RedisError(e))
+            .extend_err(|_, _| {})?;
+        let mut pipeline = state.redis.create_pipeline();
+        for session in sessions {
+            pipeline.del(format!("auth_session:{}", session)).forget();
+        }
+        pipeline
+            .del(format!("auth_session_tracker:{}", &bot.id))
+            .forget();
+        pipeline
+            .execute()
+            .await
+            .map_err(|e| RtwalkError::RedisError(e))
+            .extend_err(|_, _| {})?;
+
+        Ok(Bot { token, bot })
+    }
+
+    async fn reset_password(&self, ctx: &Context<'_>, email: String) -> Result<bool> {
+        todo!()
+    }
+
+    async fn change_email(&self, ctx: &Context<'_>, email: String) -> Result<bool> {
+        todo!()
     }
 }

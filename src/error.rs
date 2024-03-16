@@ -1,5 +1,6 @@
 use async_graphql::ErrorExtensions;
 use thiserror::Error;
+use tracing::{debug, error, trace, Value};
 
 pub type Result<T> = async_graphql::Result<T>;
 
@@ -29,18 +30,38 @@ pub enum RtwalkError {
 
 impl ErrorExtensions for RtwalkError {
     fn extend(&self) -> async_graphql::Error {
-        dbg!(self);
         async_graphql::Error::new(format!("{}", self)).extend_with(|_err, e| match self {
-            RtwalkError::UnauthenticatedRequest => e.set("tp", "UNAUTHENTICATED_REQUEST"),
+            RtwalkError::UnauthenticatedRequest => {
+                trace!("{}", self);
+                e.set("tp", "UNAUTHENTICATED_REQUEST")
+            }
             RtwalkError::InternalError(_)
             | RtwalkError::ImpossibleError(_, _)
             | RtwalkError::DatabaseError(_)
-            | RtwalkError::RedisError(_) => e.set("tp", "INTERNAL_ERROR"),
-            RtwalkError::UsernameAlreadyExists => e.set("tp", "USERNAME_ALREADY_EXISTS"),
-            RtwalkError::VerificationCodeExpired => e.set("tp", "VERIFICATION_CODE_EXPIRED"),
-            RtwalkError::InvalidVerificationCode => e.set("tp", "INVALID_VERIFICATION_CODE"),
-            RtwalkError::InvalidCredentials => e.set("tp", "INVALID_CREDENTIALS"),
-            RtwalkError::UnauhorizedBotOwner => e.set("tp", "UNAUTHORIZED_BOT_OWNER"),
+            | RtwalkError::RedisError(_) => {
+                error!("{:?}", self);
+                e.set("tp", "INTERNAL_ERROR")
+            }
+            RtwalkError::UsernameAlreadyExists => {
+                trace!("{}", self);
+                e.set("tp", "USERNAME_ALREADY_EXISTS")
+            }
+            RtwalkError::VerificationCodeExpired => {
+                trace!("{}", self);
+                e.set("tp", "VERIFICATION_CODE_EXPIRED")
+            }
+            RtwalkError::InvalidVerificationCode => {
+                trace!("{}", self);
+                e.set("tp", "INVALID_VERIFICATION_CODE")
+            }
+            RtwalkError::InvalidCredentials => {
+                trace!("{}", self);
+                e.set("tp", "INVALID_CREDENTIALS")
+            }
+            RtwalkError::UnauhorizedBotOwner => {
+                trace!("{}", self);
+                e.set("tp", "UNAUTHORIZED_BOT_OWNER")
+            }
         })
     }
 }
