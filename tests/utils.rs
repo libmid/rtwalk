@@ -26,7 +26,7 @@ pub async fn setup(
         Client,
     ),
 )> {
-    dotenv()?;
+    let _ = dotenv();
 
     let redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
     let pubsub_redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;

@@ -19,11 +19,7 @@ use dotenvy::dotenv;
 use gql::{MutationRoot, QueryRoot};
 use rustis::client::Client;
 use state::Auth;
-use surrealdb::{
-    engine::{remote::ws::Ws},
-    opt::auth::Database,
-    Surreal,
-};
+use surrealdb::{engine::remote::ws::Ws, opt::auth::Database, Surreal};
 use tokio::net::TcpListener;
 use tower_cookies::{CookieManagerLayer, Cookies, Key};
 use tracing::info;
@@ -58,7 +54,7 @@ async fn gql(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    dotenv()?;
+    let _ = dotenv();
     tracing_subscriber::fmt::init();
     let mut spec = CliSpec::new();
 
