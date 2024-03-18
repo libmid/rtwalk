@@ -485,11 +485,11 @@ impl MutationRoot {
         Ok(Bot { token, bot })
     }
 
-    async fn reset_password(&self, ctx: &Context<'_>, email: String) -> Result<bool> {
+    async fn reset_password(&self, _ctx: &Context<'_>, _email: String) -> Result<bool> {
         todo!()
     }
 
-    async fn change_email(&self, ctx: &Context<'_>, email: String) -> Result<bool> {
+    async fn change_email(&self, _ctx: &Context<'_>, _email: String) -> Result<bool> {
         todo!()
     }
 }

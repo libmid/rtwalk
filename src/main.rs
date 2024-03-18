@@ -20,7 +20,7 @@ use gql::{MutationRoot, QueryRoot};
 use rustis::client::Client;
 use state::Auth;
 use surrealdb::{
-    engine::{local::Mem, remote::ws::Ws},
+    engine::{remote::ws::Ws},
     opt::auth::Database,
     Surreal,
 };

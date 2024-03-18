@@ -8,6 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  DB_URL: 0.0.0.0:8000
+  REDIS_URL: 127.0.0.1:6379
 
 jobs:
   build:

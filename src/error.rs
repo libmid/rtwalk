@@ -1,6 +1,6 @@
 use async_graphql::ErrorExtensions;
 use thiserror::Error;
-use tracing::{debug, error, trace, Value};
+use tracing::{error, trace};
 
 pub type Result<T> = async_graphql::Result<T>;
 
