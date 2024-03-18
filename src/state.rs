@@ -3,25 +3,25 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use surrealdb::Surreal;
+use surrealdb::{engine::remote::ws::Client, Surreal};
 
 use crate::{gql::ApiInfo, models::user::User};
 
-pub struct State<S> {
-    pub inner: Arc<InnerState<S>>,
+pub struct State {
+    pub inner: Arc<InnerState>,
 }
 
-pub struct InnerState<S> {
+pub struct InnerState {
     pub site_name: &'static str,
     pub info: ApiInfo,
     pub redis: rustis::client::Client,
     pub pubsub: rustis::client::Client,
-    pub db: Surreal<S>,
+    pub db: Surreal<Client>,
     pub cookie_key: tower_cookies::cookie::Key,
 }
 
-impl<S> Deref for State<S> {
-    type Target = InnerState<S>;
+impl Deref for State {
+    type Target = InnerState;
     fn deref(&self) -> &Self::Target {
         &*self.inner
     }

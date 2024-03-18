@@ -10,7 +10,6 @@ use rustis::{
     client::BatchPreparedCommand,
     commands::{GenericCommands, SetCommands, StringCommands},
 };
-use surrealdb::engine::remote::ws::Client;
 use tower_cookies::cookie::time::Duration;
 use tower_cookies::{Cookie, Cookies};
 
@@ -18,7 +17,7 @@ pub mod users;
 
 macro_rules! state {
     ($ctx: expr) => {
-        $ctx.data_unchecked::<State<Client>>()
+        $ctx.data_unchecked::<State>()
     };
 }
 

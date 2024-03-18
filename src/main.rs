@@ -19,7 +19,11 @@ use dotenvy::dotenv;
 use gql::{MutationRoot, QueryRoot};
 use rustis::client::Client;
 use state::Auth;
-use surrealdb::{engine::remote::ws::Ws, opt::auth::Database, Surreal};
+use surrealdb::{
+    engine::{local::Mem, remote::ws::Ws},
+    opt::auth::Database,
+    Surreal,
+};
 use tokio::net::TcpListener;
 use tower_cookies::{CookieManagerLayer, Cookies, Key};
 use tracing::info;

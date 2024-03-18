@@ -5,24 +5,41 @@ use dotenvy::dotenv;
 use rustis::client::Client;
 use std::env;
 use std::sync::Arc;
-use surrealdb::engine::local::Mem;
+use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Database;
 use surrealdb::Surreal;
 use tower_cookies::Key;
 
-use rtwalk::ApiInfo;
-use rtwalk::InnerState;
-use rtwalk::MutationRoot;
-use rtwalk::QueryRoot;
-use rtwalk::State;
+use rtwalk::gql::ApiInfo;
+use rtwalk::gql::MutationRoot;
+use rtwalk::gql::QueryRoot;
+use rtwalk::state::InnerState;
+use rtwalk::state::State;
 
-pub async fn setup() -> Result<Schema<QueryRoot, MutationRoot, EmptySubscription>> {
+pub async fn setup(
+    test_name: &str,
+) -> Result<(
+    Schema<QueryRoot, MutationRoot, EmptySubscription>,
+    (
+        Surreal<surrealdb::engine::remote::ws::Client>,
+        Client,
+        Client,
+    ),
+)> {
     dotenv()?;
 
     let redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
     let pubsub_redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
-    let surreal_client = Surreal::new::<Mem>(()).await?;
-    surreal_client.use_ns("test").use_db("rtwalk").await?;
+    let surreal_client = Surreal::new::<Ws>(env::var("DB_URL").expect("DB_URL")).await?;
+
+    surreal_client
+        .signin(Database {
+            username: "root",
+            password: "root",
+            namespace: "test",
+            database: test_name,
+        })
+        .await?;
 
     let cookies_key = env::var("COOKIE_KEY").expect("COOKIE_KEY");
 
@@ -37,14 +54,13 @@ pub async fn setup() -> Result<Schema<QueryRoot, MutationRoot, EmptySubscription
                     rte: "ws://localhost:4001/rte",
                     vc: "ws://localhost:4002/ws",
                 },
-                redis,
-                pubsub: pubsub_redis,
-                // Its Arc internally so its fine to clone
-                db: surreal_client.into(),
+                redis: redis.clone(),
+                pubsub: pubsub_redis.clone(),
+                db: surreal_client.clone(),
                 cookie_key: Key::from(cookies_key.as_bytes()),
             }),
         })
         .finish();
 
-    Ok(schema)
+    Ok((schema, (surreal_client, redis, pubsub_redis)))
 }

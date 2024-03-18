@@ -19,7 +19,6 @@ use rustis::{
     commands::{SetCondition, SetExpiration, StringCommands},
 };
 
-use surrealdb::engine::remote::ws::Client;
 use surrealdb::sql::Thing;
 use zxcvbn::zxcvbn;
 
@@ -48,7 +47,7 @@ impl<'a> CustomValidator<String> for PasswordValidator<'a> {
 }
 
 pub async fn push_pending(
-    state: &State<Client>,
+    state: &State,
     username: String,
     email: String,
     password: String,
@@ -172,7 +171,7 @@ pub async fn push_pending(
 // TODO: There are a bunch of seperate string allocation for keys
 // maybe do those at once?
 pub async fn verify_user(
-    state: &State<Client>,
+    state: &State,
     username: String,
     code: u64,
 ) -> Result<DBUser, RtwalkError> {
@@ -258,7 +257,7 @@ pub async fn verify_user(
 }
 
 async fn create_user(
-    state: &State<Client>,
+    state: &State,
     user: DBUser,
     secret: DBUserSecret,
 ) -> Result<DBUser, RtwalkError> {
@@ -275,7 +274,7 @@ async fn create_user(
 }
 
 pub async fn create_bot(
-    state: &State<Client>,
+    state: &State,
     owner_id: String,
     username: String,
 ) -> Result<(String, DBUser), RtwalkError> {
@@ -334,7 +333,7 @@ pub async fn create_bot(
 
 // Returns the user if creds are correct, else return error
 pub async fn login_user(
-    state: &State<Client>,
+    state: &State,
     email: String,
     password: String,
 ) -> Result<DBUser, RtwalkError> {
@@ -375,7 +374,7 @@ pub async fn login_user(
 }
 
 pub async fn verify_bot_belongs_to_user(
-    state: &State<Client>,
+    state: &State,
     user_id: &str,
     bot_id: &str,
 ) -> Result<DBUser, RtwalkError> {
@@ -402,10 +401,7 @@ pub async fn verify_bot_belongs_to_user(
     Err(RtwalkError::UnauhorizedBotOwner)
 }
 
-pub async fn reset_bot_password(
-    state: &State<Client>,
-    bot_id: &str,
-) -> Result<String, RtwalkError> {
+pub async fn reset_bot_password(state: &State, bot_id: &str) -> Result<String, RtwalkError> {
     let password = cuid();
 
     let creds = format!("@{}", &password);
