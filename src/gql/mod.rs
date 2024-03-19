@@ -485,7 +485,14 @@ impl MutationRoot {
         Ok(Bot { token, bot })
     }
 
-    async fn reset_password(&self, _ctx: &Context<'_>, _email: String) -> Result<bool> {
+    async fn reset_password(&self, ctx: &Context<'_>, email: String) -> Result<bool> {
+        users::reset_password(state!(ctx), &email)
+            .await
+            .extend_err(|_, _| {})?;
+        Ok(true)
+    }
+
+    async fn verify_password(&self, ctx: &Context<'_>, token: String) -> Result<bool> {
         todo!()
     }
 

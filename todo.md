@@ -7,6 +7,7 @@
 - [ ] Reset password*
 - [x] Reset bot token
 - [x] Logout bot from user account
+- [x] Change email
 - [ ] Update user
 - [ ] Write tests
 

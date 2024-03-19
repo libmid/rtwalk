@@ -3,6 +3,9 @@ use async_graphql::EmptySubscription;
 use async_graphql::Schema;
 use dotenvy::dotenv;
 use rustis::client::Client;
+use rusty_paseto::generic::Local;
+use rusty_paseto::generic::PasetoSymmetricKey;
+use rusty_paseto::generic::V4;
 use std::env;
 use std::sync::Arc;
 use surrealdb::engine::remote::ws::Ws;
@@ -58,6 +61,9 @@ pub async fn setup(
                 pubsub: pubsub_redis.clone(),
                 db: surreal_client.clone(),
                 cookie_key: Key::from(cookies_key.as_bytes()),
+                paseto_key: PasetoSymmetricKey::<V4, Local>::from(
+                    rusty_paseto::prelude::Key::from(cookies_key[..32].as_bytes()),
+                ),
             }),
         })
         .finish();

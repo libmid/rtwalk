@@ -18,7 +18,7 @@ use rustis::{
     client::BatchPreparedCommand,
     commands::{SetCondition, SetExpiration, StringCommands},
 };
-
+use rusty_paseto::prelude::*;
 use surrealdb::sql::Thing;
 use zxcvbn::zxcvbn;
 
@@ -439,4 +439,26 @@ pub async fn reset_bot_password(state: &State, bot_id: &str) -> Result<String, R
     email.push_str(&creds);
 
     Ok(email)
+}
+
+pub async fn reset_password(state: &State, email: &str) -> Result<(), RtwalkError> {
+    let mut res = state
+        .db
+        .query("SELECT password FROM user_secret WHERE email = $email")
+        .bind(("email", email))
+        .await?;
+    let password_hash: Option<String> = res.take((0, "password"))?;
+    if let Some(password_hash) = password_hash {
+        let token = PasetoBuilder::<V4, Local>::default()
+            .set_claim(
+                CustomClaim::try_from(("password_hash", password_hash)).map_err(|_| {
+                    RtwalkError::ImpossibleError("Claim from (&str, &str) will be successful", None)
+                })?,
+            )
+            .build(&state.paseto_key)
+            .map_err(|e| RtwalkError::InternalError(e.into()))?;
+        // TODO: Send this token to the email
+        dbg!(token);
+    }
+    Ok(())
 }

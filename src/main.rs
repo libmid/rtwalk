@@ -18,6 +18,7 @@ use cliparser::{
 use dotenvy::dotenv;
 use gql::{MutationRoot, QueryRoot};
 use rustis::client::Client;
+use rusty_paseto::generic::{Local, PasetoSymmetricKey, V4};
 use state::Auth;
 use surrealdb::{engine::remote::ws::Ws, opt::auth::Database, Surreal};
 use tokio::net::TcpListener;
@@ -116,6 +117,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // Its Arc internally so its fine to clone
             db: surreal_client,
             cookie_key: Key::from(cookies_key.as_bytes()),
+            paseto_key: PasetoSymmetricKey::<V4, Local>::from(rusty_paseto::prelude::Key::from(
+                cookies_key[..32].as_bytes(),
+            )),
         }),
     });
     #[cfg(debug_assertions)]
