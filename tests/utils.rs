@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_graphql::EmptySubscription;
 use async_graphql::Schema;
 use dotenvy::dotenv;
+use opendal::Operator;
 use rustis::client::Client;
 use rusty_paseto::generic::Local;
 use rusty_paseto::generic::PasetoSymmetricKey;
@@ -46,6 +47,9 @@ pub async fn setup(
 
     let cookies_key = env::var("COOKIE_KEY").expect("COOKIE_KEY");
 
+    let mut opendal_service_builder = opendal::services::Fs::default();
+    opendal_service_builder.root("data/");
+
     let schema = Schema::build(QueryRoot, MutationRoot, EmptySubscription)
         .data(State {
             inner: Arc::new(InnerState {
@@ -60,6 +64,7 @@ pub async fn setup(
                 redis: redis.clone(),
                 pubsub: pubsub_redis.clone(),
                 db: surreal_client.clone(),
+                op: Operator::new(opendal_service_builder)?.finish(),
                 cookie_key: Key::from(cookies_key.as_bytes()),
                 paseto_key: PasetoSymmetricKey::<V4, Local>::from(
                     rusty_paseto::prelude::Key::from(cookies_key[..32].as_bytes()),

@@ -2,10 +2,16 @@ use self::users::{create_bot, PasswordValidator};
 use crate::{
     config,
     error::{Result, RtwalkError},
-    models::user::User,
+    models::{
+        file::{File, FileOps},
+        user::User,
+    },
     state::{Auth, State},
 };
-use async_graphql::{Context, ErrorExtensions, Guard, Object, ResultExt, SimpleObject};
+use async_graphql::{
+    Context, ErrorExtensions, Guard, MaybeUndefined, Object, ResultExt, SimpleObject, Upload,
+};
+use cuid2::cuid;
 use rustis::{
     client::BatchPreparedCommand,
     commands::{GenericCommands, SetCommands, StringCommands},
@@ -485,18 +491,185 @@ impl MutationRoot {
         Ok(Bot { token, bot })
     }
 
-    async fn reset_password(&self, ctx: &Context<'_>, email: String) -> Result<bool> {
+    async fn reset_password(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(validator(max_length = 100, email))] email: String,
+    ) -> Result<bool> {
         users::reset_password(state!(ctx), &email)
             .await
             .extend_err(|_, _| {})?;
         Ok(true)
     }
 
-    async fn verify_password(&self, ctx: &Context<'_>, token: String) -> Result<bool> {
+    async fn verify_password(
+        &self,
+        ctx: &Context<'_>,
+        token: String,
+        #[graphql(validator(
+            min_length = 4,
+            max_length = 64,
+            custom = r#"PasswordValidator("", "")"#
+        ))]
+        new_password: String,
+    ) -> Result<bool> {
+        users::set_new_password(state!(ctx), &token, new_password)
+            .await
+            .extend_err(|_, _| {})?;
+        Ok(true)
+    }
+
+    #[graphql(guard = "Role::Human")]
+    async fn change_email(&self, _ctx: &Context<'_>, _email: String) -> Result<bool> {
+        // TODO:
         todo!()
     }
 
-    async fn change_email(&self, _ctx: &Context<'_>, _email: String) -> Result<bool> {
-        todo!()
+    #[graphql(guard = "Role::Authenticated")]
+    async fn update_user(
+        &self,
+        ctx: &Context<'_>,
+        username: Option<String>,
+        display_name: Option<String>,
+        bio: MaybeUndefined<String>,
+        pfp: MaybeUndefined<Upload>,
+        banner: MaybeUndefined<Upload>,
+    ) -> Result<User> {
+        let mut user = user!(ctx);
+        let state = state!(ctx);
+
+        if let Some(username) = username {
+            user.username = username;
+        }
+        if let Some(display_name) = display_name {
+            user.display_name = display_name;
+        }
+        if bio.is_null() {
+            user.bio = None;
+        } else if let MaybeUndefined::Value(v) = bio {
+            user.bio = Some(v);
+        }
+        if pfp.is_null() {
+            user.pfp
+                .delete(&state.op)
+                .await
+                .map_err(|e| RtwalkError::InternalError(e))
+                .extend_err(|_, _| {})?;
+            user.pfp = None;
+        } else if let MaybeUndefined::Value(v) = pfp {
+            let mut upload_value = v.value(&ctx)?;
+            if upload_value.size()? > config::MAX_UPLOAD_SIZE {
+                return Err(RtwalkError::MaxUploadSizeExceeded).extend_err(|_, _| {})?;
+            }
+
+            user.pfp
+                .delete(&state.op)
+                .await
+                .map_err(|e| RtwalkError::InternalError(e))
+                .extend_err(|_, _| {})?;
+
+            let pfp_file = File {
+                loc: format!("{}/{}-{}", &user.id, cuid(), upload_value.filename),
+            };
+            pfp_file
+                .save(&state.op, &mut upload_value)
+                .await
+                .map_err(|e| RtwalkError::InternalError(e))
+                .extend_err(|_, _| {})?;
+            user.pfp = Some(pfp_file);
+        }
+        if banner.is_null() {
+            user.banner
+                .delete(&state.op)
+                .await
+                .map_err(|e| RtwalkError::InternalError(e))
+                .extend_err(|_, _| {})?;
+
+            user.banner = None;
+        } else if let MaybeUndefined::Value(v) = banner {
+            let mut upload_value = v.value(&ctx)?;
+            if upload_value.size()? > config::MAX_UPLOAD_SIZE {
+                return Err(RtwalkError::MaxUploadSizeExceeded).extend_err(|_, _| {})?;
+            }
+
+            user.banner
+                .delete(&state.op)
+                .await
+                .map_err(|e| RtwalkError::InternalError(e))
+                .extend_err(|_, _| {})?;
+
+            let banner_file = File {
+                loc: format!("{}/{}-{}", &user.id, cuid(), upload_value.filename),
+            };
+            banner_file
+                .save(&state.op, &mut upload_value)
+                .await
+                .map_err(|e| RtwalkError::InternalError(e))
+                .extend_err(|_, _| {})?;
+            user.banner = Some(banner_file);
+        }
+
+        let user: User = users::update_user(state, user)
+            .await
+            .extend_err(|_, _| {})?
+            .into();
+
+        // TODO: Modify sessions instead of logging everyone out
+        Role::Authenticated.check(ctx).await.extend_err(|_, _| {})?;
+        self.logout_all(ctx).await.extend_err(|_, _| {})?;
+
+        let token = cuid2::cuid();
+        let mut pipeline = state.redis.create_pipeline();
+        pipeline
+            .set_with_options(
+                format!("auth_session:{}", &token),
+                serde_json::to_string(&user)
+                    .map_err(|e| {
+                        RtwalkError::ImpossibleError(
+                            "Serialization of User can't fail",
+                            Some(e.into()),
+                        )
+                    })
+                    .extend_err(|_, _| {})?,
+                rustis::commands::SetCondition::None,
+                rustis::commands::SetExpiration::Ex(if user.bot {
+                    config::BOT_SESSION_EXPIERY
+                } else {
+                    config::SESSION_EXPIERY_SECONDS
+                }),
+                false,
+            )
+            .forget();
+        pipeline
+            .sadd(format!("auth_session_tracker:{}", &user.id), &token)
+            .forget();
+        pipeline
+            .expire(
+                format!("auth_session_tracker:{}", &user.id),
+                if user.bot {
+                    config::BOT_SESSION_EXPIERY
+                } else {
+                    config::SESSION_EXPIERY_SECONDS
+                },
+                rustis::commands::ExpireOption::None,
+            )
+            .forget();
+        pipeline
+            .execute()
+            .await
+            .map_err(|e| RtwalkError::RedisError(e))
+            .extend_err(|_, _| {})?;
+        let cookies = cookies!(ctx);
+        let signed_jar = cookies.signed(&state.cookie_key);
+        let mut cookie = Cookie::new("session", token);
+        cookie.set_max_age(Duration::seconds(if user.bot {
+            config::BOT_SESSION_EXPIERY as i64
+        } else {
+            config::SESSION_EXPIERY_SECONDS as i64
+        }));
+        cookie.set_secure(true);
+        signed_jar.add(cookie);
+
+        Ok(user)
     }
 }

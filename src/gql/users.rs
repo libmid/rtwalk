@@ -1,4 +1,5 @@
 use crate::config;
+use crate::models::user::User;
 use crate::{
     error::RtwalkError,
     models::user::{DBUser, DBUserSecret},
@@ -19,7 +20,7 @@ use rustis::{
     commands::{SetCondition, SetExpiration, StringCommands},
 };
 use rusty_paseto::prelude::*;
-use surrealdb::sql::Thing;
+use surrealdb::sql::{Datetime, Thing};
 use zxcvbn::zxcvbn;
 
 pub struct PasswordValidator<'a>(pub &'a str, pub &'a str);
@@ -444,21 +445,91 @@ pub async fn reset_bot_password(state: &State, bot_id: &str) -> Result<String, R
 pub async fn reset_password(state: &State, email: &str) -> Result<(), RtwalkError> {
     let mut res = state
         .db
-        .query("SELECT password FROM user_secret WHERE email = $email")
+        .query("SELECT password, user.bot as bot FROM user_secret WHERE email = $email")
         .bind(("email", email))
         .await?;
     let password_hash: Option<String> = res.take((0, "password"))?;
+    let bot: Option<bool> = res.take((0, "bot"))?;
     if let Some(password_hash) = password_hash {
+        if bot.unwrap() {
+            return Err(RtwalkError::UnauthenticatedRequest);
+        }
         let token = PasetoBuilder::<V4, Local>::default()
             .set_claim(
                 CustomClaim::try_from(("password_hash", password_hash)).map_err(|_| {
                     RtwalkError::ImpossibleError("Claim from (&str, &str) will be successful", None)
                 })?,
             )
+            .set_claim(CustomClaim::try_from(("email", email)).map_err(|_| {
+                RtwalkError::ImpossibleError("Claim from (&str, &str) will be successful", None)
+            })?)
             .build(&state.paseto_key)
             .map_err(|e| RtwalkError::InternalError(e.into()))?;
         // TODO: Send this token to the email
         dbg!(token);
     }
     Ok(())
+}
+
+pub async fn set_new_password(
+    state: &State,
+    token: &str,
+    new_password: String,
+) -> Result<(), RtwalkError> {
+    let data = PasetoParser::<V4, Local>::default()
+        .parse(&token, &state.paseto_key)
+        .map_err(|_| RtwalkError::InvalidPasswordResetToken)?;
+
+    let password_hash = data["password_hash"].to_string();
+    let password_hash = &password_hash[1..password_hash.len() - 1];
+    let email = data["email"].to_string();
+    let email = &email[1..email.len() - 1];
+    let mut res = state
+        .db
+        .query("SELECT 1 FROM user_secret WHERE password = $password_hash AND email = $email")
+        .bind(("password_hash", password_hash))
+        .bind(("email", email))
+        .await?;
+    let exists: Option<u64> = res.take((0, "1"))?;
+    if exists.is_some() {
+        let new_password_hash = tokio::task::spawn_blocking(move || {
+            let salt = SaltString::generate(&mut OsRng);
+            let argon2 = Argon2::default();
+            argon2
+                .hash_password(new_password.as_bytes(), &salt)
+                .map(|p| p.to_string())
+                .map_err(|e| RtwalkError::InternalError(e.into()))
+        })
+        .await
+        .map_err(|e| RtwalkError::InternalError(e.into()))??;
+
+        state
+            .db
+            .query("UPDATE user_secret SET password = $new_password_hash WHERE email = $email")
+            .bind(("new_password_hash", new_password_hash))
+            .bind(("email", email))
+            .await?;
+        return Ok(());
+    }
+    Err(RtwalkError::InvalidPasswordResetToken)
+}
+
+pub async fn update_user(state: &State, updated_user: User) -> Result<DBUser, RtwalkError> {
+    let mut db_user: DBUser = updated_user.into();
+    db_user.modified_at = Datetime::default();
+
+    let mut exists = state
+        .db
+        .query("SELECT 1 FROM user WHERE username = $username AND id != $id")
+        .bind(("username", &db_user.username))
+        .bind(("id", &db_user.id))
+        .await?;
+    let username_exists: Option<u64> = exists.take((0, "1"))?;
+    if username_exists.is_some() {
+        return Err(RtwalkError::UsernameAlreadyExists);
+    }
+
+    let res: Option<DBUser> = state.db.update(&db_user.id).content(db_user).await?;
+
+    res.ok_or(RtwalkError::ImpossibleError("Failed at user update", None))
 }

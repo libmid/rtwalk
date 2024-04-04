@@ -8,10 +8,11 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.80"
 argon2 = "0.5.3"
-async-graphql = { version = "7.0.2", features = ["apollo_tracing"] }
+async-graphql = { version = "7.0.2", features = ["apollo_tracing", "unblock"] }
 async-graphql-axum = "7.0.2"
 axum = { version = "0.7.4", features = ["ws"], default-features = false }
 bytes = "1.5.0"
+chrono = "0.4.37"
 cliparser = "0.1.2"
 cuid2 = "0.1.2"
 dotenvy = "0.15.7"

@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use opendal::Operator;
 use rusty_paseto::generic::{Local, V4};
 use surrealdb::{engine::remote::ws::Client, Surreal};
 
@@ -18,6 +19,7 @@ pub struct InnerState {
     pub redis: rustis::client::Client,
     pub pubsub: rustis::client::Client,
     pub db: Surreal<Client>,
+    pub op: Operator,
     pub cookie_key: tower_cookies::cookie::Key,
     pub paseto_key: rusty_paseto::prelude::PasetoSymmetricKey<V4, Local>,
 }

@@ -1,8 +1,7 @@
 use super::file::File;
-use crate::utils::get_sys_time_secs;
 use async_graphql::SimpleObject;
 use serde::{Deserialize, Serialize};
-use surrealdb::sql::Thing;
+use surrealdb::sql::{Datetime, Thing};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DBUser {
@@ -12,8 +11,8 @@ pub struct DBUser {
     pub bio: Option<String>,
     pub pfp: Option<File>,
     pub banner: Option<File>,
-    pub created_at: u64,
-    pub modified_at: u64,
+    pub created_at: Datetime,
+    pub modified_at: Datetime,
     pub admin: bool,
     pub bot: bool,
     pub owner: Option<Thing>,
@@ -22,7 +21,8 @@ pub struct DBUser {
 impl DBUser {
     /// Creates a new [`DBUser`].
     pub fn new(username: String, bot: bool, owner: Option<Thing>) -> Self {
-        let created_at = get_sys_time_secs();
+        let created_at = Datetime::default();
+        let modified_at = created_at.clone();
         DBUser {
             id: Thing {
                 tb: "user".into(),
@@ -34,7 +34,7 @@ impl DBUser {
             pfp: None,
             banner: None,
             created_at,
-            modified_at: created_at,
+            modified_at,
             admin: false,
             bot,
             owner,
@@ -57,8 +57,8 @@ pub struct User {
     pub bio: Option<String>,
     pub pfp: Option<File>,
     pub banner: Option<File>,
-    pub created_at: u64,
-    pub modified_at: u64,
+    pub created_at: i64,
+    pub modified_at: i64,
     pub admin: bool,
     pub bot: bool,
     pub owner: Option<String>,
@@ -73,11 +73,39 @@ impl From<DBUser> for User {
             bio: value.bio,
             pfp: value.pfp,
             banner: value.banner,
-            created_at: value.created_at,
-            modified_at: value.modified_at,
+            created_at: value.created_at.timestamp(),
+            modified_at: value.modified_at.timestamp(),
             admin: value.admin,
             bot: value.bot,
             owner: value.owner.map(|i| i.id.to_raw()),
+        }
+    }
+}
+
+impl From<User> for DBUser {
+    fn from(value: User) -> Self {
+        Self {
+            id: Thing {
+                tb: "user".into(),
+                id: value.id.into(),
+            },
+            username: value.username,
+            display_name: value.display_name,
+            bio: value.bio,
+            pfp: value.pfp,
+            banner: value.banner,
+            created_at: chrono::DateTime::from_timestamp(value.created_at, 0)
+                .expect("Can't fail")
+                .into(),
+            modified_at: chrono::DateTime::from_timestamp(value.modified_at, 0)
+                .expect("Can't fail")
+                .into(),
+            admin: value.admin,
+            bot: value.bot,
+            owner: value.owner.map(|i| Thing {
+                tb: "user".into(),
+                id: i.into(),
+            }),
         }
     }
 }

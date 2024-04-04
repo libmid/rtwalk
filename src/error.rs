@@ -26,6 +26,10 @@ pub enum RtwalkError {
     InvalidVerificationCode,
     #[error("Invalid credentials")]
     InvalidCredentials,
+    #[error("Invalid password reset token")]
+    InvalidPasswordResetToken,
+    #[error("Max file upload size exceeded")]
+    MaxUploadSizeExceeded,
 }
 
 impl ErrorExtensions for RtwalkError {
@@ -61,6 +65,14 @@ impl ErrorExtensions for RtwalkError {
             RtwalkError::UnauhorizedBotOwner => {
                 trace!("{}", self);
                 e.set("tp", "UNAUTHORIZED_BOT_OWNER")
+            }
+            RtwalkError::InvalidPasswordResetToken => {
+                trace!("{}", self);
+                e.set("tp", "INVALID_PASSWORD_RESET_TOKEN")
+            }
+            RtwalkError::MaxUploadSizeExceeded => {
+                trace!("{}", self);
+                e.set("tp", "MAX_UPLOAD_SIZE_EXCEEDED")
             }
         })
     }
