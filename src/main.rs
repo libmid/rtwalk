@@ -2,8 +2,6 @@ use std::{env, error::Error, sync::Arc};
 
 use crate::gql::ApiInfo;
 
-#[cfg(debug_assertions)]
-use async_graphql::extensions::ApolloTracing;
 use async_graphql::{http::GraphiQLSource, EmptySubscription, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
@@ -130,8 +128,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )),
         }),
     });
-    #[cfg(debug_assertions)]
-    let schema = schema.extension(ApolloTracing);
 
     let app = Router::new()
         .route("/", get(graphiql).post(gql))

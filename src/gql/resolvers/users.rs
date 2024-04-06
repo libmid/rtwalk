@@ -1,4 +1,6 @@
-use async_graphql::{Context, Object, ResultExt};
+use async_graphql::{dataloader::*, SimpleObject};
+use async_graphql::{ComplexObject, Context, Object, ResultExt};
+use surrealdb::sql::Thing;
 
 use self::users::create_bot;
 use crate::{
@@ -15,9 +17,43 @@ use rustis::{
 use tower_cookies::cookie::time::Duration;
 use tower_cookies::Cookie;
 
-use super::super::{cookies, state, user, users, users::PasswordValidator, Bot, Role};
-use crate::error::Result;
-use crate::models::user::User;
+use super::super::{cookies, state, user, users, users::PasswordValidator, Role};
+use crate::models::user::{DBUser, User};
+
+#[ComplexObject]
+impl User {
+    #[graphql(guard = Role::Authenticated)]
+    async fn bots(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<User>> {
+        let state = state!(ctx);
+        let user = user!(ctx);
+
+        if user.admin || user.id == self.id {
+            let mut res = state
+                .db
+                .query("SELECT * FROM user WHERE owner = $owner")
+                .bind((
+                    "owner",
+                    Thing {
+                        tb: "user".into(),
+                        id: self.id.clone().into(),
+                    },
+                ))
+                .await
+                .map_err(|e| RtwalkError::from(e))
+                .extend_err(|_, _| {})?;
+
+            let bots: Vec<DBUser> = res
+                .take(0)
+                .map_err(|e| RtwalkError::from(e))
+                .extend_err(|_, _| {})?;
+
+            return Ok(bots.into_iter().map(|x| x.into()).collect());
+        }
+        Err(RtwalkError::UnauhorizedRequest)
+            .extend_err(|_, _| {})
+            .into()
+    }
+}
 
 #[derive(Default)]
 pub struct UserQueryRoot;
@@ -31,11 +67,15 @@ pub enum UserSelectCriteria {
 #[Object]
 impl UserQueryRoot {
     #[graphql(guard = Role::Authenticated)]
-    async fn me(&self, ctx: &Context<'_>) -> Result<User> {
+    async fn me(&self, ctx: &Context<'_>) -> async_graphql::Result<User> {
         Ok(user!(ctx))
     }
 
-    async fn user(&self, ctx: &Context<'_>, criteria: UserSelectCriteria) -> Result<Option<User>> {
+    async fn user(
+        &self,
+        ctx: &Context<'_>,
+        criteria: UserSelectCriteria,
+    ) -> async_graphql::Result<Option<User>> {
         let state = state!(ctx);
 
         let user = users::fetch_user(state, criteria)
@@ -44,6 +84,13 @@ impl UserQueryRoot {
 
         Ok(user.map(|x| x.into()))
     }
+}
+
+#[derive(SimpleObject)]
+struct Bot {
+    token: String,
+    #[graphql(flatten)]
+    bot: User,
 }
 
 #[derive(Default)]
@@ -63,10 +110,10 @@ impl UserMutationRoot {
         #[graphql(validator(
             min_length = 4,
             max_length = 64,
-            custom = "PasswordValidator(&username, &email)"
+            custom = PasswordValidator(&username, &email)
         ))]
         password: String,
-    ) -> Result<&str> {
+    ) -> async_graphql::Result<&str> {
         // On success makes 1 database and 2 redis query.
         // Maximum 1 database and 1 redis query on failure.
         // Also hashing takes place in this step. Its normal for latency to be > 1s.
@@ -84,7 +131,7 @@ impl UserMutationRoot {
         #[graphql(validator(min_length = 4, max_length = 20, regex = r"^[a-z0-9_]+$"))]
         username: String,
         code: u64,
-    ) -> Result<User> {
+    ) -> async_graphql::Result<User> {
         // Makes 1 database and 3 redis query on success.
         // Makes 3 (max) redis query on failure.
         Ok(users::verify_user(state!(ctx), username, code)
@@ -99,7 +146,7 @@ impl UserMutationRoot {
         ctx: &Context<'_>,
         #[graphql(validator(max_length = 100, email))] email: String,
         #[graphql(validator(min_length = 4, max_length = 64,))] password: String,
-    ) -> Result<User> {
+    ) -> async_graphql::Result<User> {
         // Sends total of 1 database query and 1 redis query on success.
         // 1 database query on failure.
 
@@ -168,7 +215,7 @@ impl UserMutationRoot {
 
     // Logout current user session
     #[graphql(guard = "Role::Authenticated")]
-    async fn logout(&self, ctx: &Context<'_>) -> Result<bool> {
+    async fn logout(&self, ctx: &Context<'_>) -> async_graphql::Result<bool> {
         let state = state!(ctx);
         let user = user!(ctx);
         let cookies = cookies!(ctx);
@@ -201,7 +248,7 @@ impl UserMutationRoot {
 
     /// Logs out all active/inactive sessions on all devices
     #[graphql(guard = "Role::Authenticated")]
-    async fn logout_all(&self, ctx: &Context<'_>) -> Result<bool> {
+    async fn logout_all(&self, ctx: &Context<'_>) -> async_graphql::Result<bool> {
         // Sends 2 redis queries.
         let user = user!(ctx);
         let state = state!(ctx);
@@ -235,7 +282,7 @@ impl UserMutationRoot {
     /// Only humans can create bots.
     /// Returns bot credentials.
     #[graphql(guard = "Role::Human")]
-    async fn create_bot(&self, ctx: &Context<'_>, username: String) -> Result<Bot> {
+    async fn create_bot(&self, ctx: &Context<'_>, username: String) -> async_graphql::Result<Bot> {
         let user = user!(ctx);
         // 2 database and 1 redis query on sucess
         let (token, bot) = create_bot(state!(ctx), user.id, username)
@@ -249,7 +296,7 @@ impl UserMutationRoot {
 
     /// Only non-bot accounts who own the bot can do this.
     #[graphql(guard = "Role::Human")]
-    async fn login_as_bot(&self, ctx: &Context<'_>, bot_id: String) -> Result<User> {
+    async fn login_as_bot(&self, ctx: &Context<'_>, bot_id: String) -> async_graphql::Result<User> {
         let user = user!(ctx);
         let state = state!(ctx);
         let cookies = cookies!(ctx);
@@ -342,7 +389,11 @@ impl UserMutationRoot {
 
     /// Only non-bot accounts who own the bot can do this.
     #[graphql(guard = "Role::Human")]
-    async fn logout_all_bot(&self, ctx: &Context<'_>, bot_id: String) -> Result<bool> {
+    async fn logout_all_bot(
+        &self,
+        ctx: &Context<'_>,
+        bot_id: String,
+    ) -> async_graphql::Result<bool> {
         let user = user!(ctx);
         let state = state!(ctx);
 
@@ -375,7 +426,11 @@ impl UserMutationRoot {
 
     /// Only non-bot accounts who own the bot can do this.
     #[graphql(guard = "Role::Human")]
-    async fn reset_bot_token(&self, ctx: &Context<'_>, bot_id: String) -> Result<Bot> {
+    async fn reset_bot_token(
+        &self,
+        ctx: &Context<'_>,
+        bot_id: String,
+    ) -> async_graphql::Result<Bot> {
         let user = user!(ctx);
         let state = state!(ctx);
 
@@ -416,7 +471,7 @@ impl UserMutationRoot {
         &self,
         ctx: &Context<'_>,
         #[graphql(validator(max_length = 100, email))] email: String,
-    ) -> Result<bool> {
+    ) -> async_graphql::Result<bool> {
         users::reset_password(state!(ctx), &email)
             .await
             .extend_err(|_, _| {})?;
@@ -433,7 +488,7 @@ impl UserMutationRoot {
             custom = r#"PasswordValidator("", "")"#
         ))]
         new_password: String,
-    ) -> Result<bool> {
+    ) -> async_graphql::Result<bool> {
         users::set_new_password(state!(ctx), &token, new_password)
             .await
             .extend_err(|_, _| {})?;
@@ -441,7 +496,11 @@ impl UserMutationRoot {
     }
 
     #[graphql(guard = "Role::Human")]
-    async fn change_email(&self, _ctx: &Context<'_>, _email: String) -> Result<bool> {
+    async fn change_email(
+        &self,
+        _ctx: &Context<'_>,
+        _email: String,
+    ) -> async_graphql::Result<bool> {
         // TODO:
         todo!()
     }
@@ -455,7 +514,7 @@ impl UserMutationRoot {
         bio: MaybeUndefined<String>,
         pfp: MaybeUndefined<Upload>,
         banner: MaybeUndefined<Upload>,
-    ) -> Result<User> {
+    ) -> async_graphql::Result<User> {
         let mut user = user!(ctx);
         let state = state!(ctx);
 

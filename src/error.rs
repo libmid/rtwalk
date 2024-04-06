@@ -8,8 +8,8 @@ pub type Result<T> = async_graphql::Result<T>;
 pub enum RtwalkError {
     #[error("Unauthenticated request")]
     UnauthenticatedRequest,
-    #[error("Unauthorized bot owner")]
-    UnauhorizedBotOwner,
+    #[error("Unauthorized request")]
+    UnauhorizedRequest,
     #[error("Internal server error")]
     InternalError(#[from] anyhow::Error),
     #[error("Internal server error")]
@@ -62,9 +62,9 @@ impl ErrorExtensions for RtwalkError {
                 trace!("{}", self);
                 e.set("tp", "INVALID_CREDENTIALS")
             }
-            RtwalkError::UnauhorizedBotOwner => {
+            RtwalkError::UnauhorizedRequest => {
                 trace!("{}", self);
-                e.set("tp", "UNAUTHORIZED_BOT_OWNER")
+                e.set("tp", "UNAUTHORIZED_REQUEST")
             }
             RtwalkError::InvalidPasswordResetToken => {
                 trace!("{}", self);

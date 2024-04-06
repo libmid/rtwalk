@@ -50,6 +50,7 @@ pub struct DBUserSecret {
 }
 
 #[derive(SimpleObject, Serialize, Deserialize, Debug)]
+#[graphql(complex)]
 pub struct User {
     pub id: String,
     pub username: String,

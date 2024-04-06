@@ -401,7 +401,7 @@ pub async fn verify_bot_belongs_to_user(
             }
         }
     }
-    Err(RtwalkError::UnauhorizedBotOwner)
+    Err(RtwalkError::UnauhorizedRequest)
 }
 
 pub async fn reset_bot_password(state: &State, bot_id: &str) -> Result<String, RtwalkError> {

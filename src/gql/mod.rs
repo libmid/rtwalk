@@ -52,12 +52,6 @@ pub struct ApiInfo {
     pub vc: &'static str,
 }
 
-#[derive(SimpleObject)]
-struct Bot {
-    token: String,
-    bot: User,
-}
-
 #[derive(Eq, PartialEq, Copy, Clone)]
 enum Role {
     Bot,             // Only bot
@@ -120,7 +114,9 @@ impl QueryRoot {
 }
 
 #[derive(MergedObject, Default)]
+#[graphql(name = "Query")]
 pub struct MergedQueryRoot(QueryRoot, resolvers::users::UserQueryRoot);
 
 #[derive(MergedObject, Default)]
+#[graphql(name = "Mutation")]
 pub struct MergedMutationRoot(resolvers::users::UserMutationRoot);
