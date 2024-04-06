@@ -23,6 +23,8 @@ use rusty_paseto::prelude::*;
 use surrealdb::sql::{Datetime, Thing};
 use zxcvbn::zxcvbn;
 
+use super::resolvers::users::UserSelectCriteria;
+
 pub struct PasswordValidator<'a>(pub &'a str, pub &'a str);
 
 impl<'a> CustomValidator<String> for PasswordValidator<'a> {
@@ -532,4 +534,24 @@ pub async fn update_user(state: &State, updated_user: User) -> Result<DBUser, Rt
     let res: Option<DBUser> = state.db.update(&db_user.id).content(db_user).await?;
 
     res.ok_or(RtwalkError::ImpossibleError("Failed at user update", None))
+}
+
+pub async fn fetch_user(
+    state: &State,
+    criteria: UserSelectCriteria,
+) -> Result<Option<DBUser>, RtwalkError> {
+    let user: Option<DBUser> = match criteria {
+        UserSelectCriteria::Id(id) => state.db.select(("user", id)).await?,
+        UserSelectCriteria::Username(username) => {
+            let mut res = state
+                .db
+                .query("SELECT * FROM user WHERE username = $username")
+                .bind(("username", username))
+                .await?;
+
+            res.take(0)?
+        }
+    };
+
+    Ok(user)
 }

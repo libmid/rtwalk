@@ -16,7 +16,7 @@ use cliparser::{
     types::{Argument, ArgumentOccurrence, ArgumentValueType, CliSpec, CliSpecMetaInfo},
 };
 use dotenvy::dotenv;
-use gql::{MutationRoot, QueryRoot};
+use gql::{MergedMutationRoot, MergedQueryRoot};
 use opendal::Operator;
 use rustis::client::Client;
 use rusty_paseto::generic::{Local, PasetoSymmetricKey, V4};
@@ -43,7 +43,7 @@ async fn graphiql() -> impl IntoResponse {
 }
 
 async fn gql(
-    schema: Extension<Schema<QueryRoot, MutationRoot, EmptySubscription>>,
+    schema: Extension<Schema<MergedQueryRoot, MergedMutationRoot, EmptySubscription>>,
     cookies: Cookies,
     request: GraphQLRequest,
 ) -> GraphQLResponse {
@@ -105,7 +105,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut opendal_service_builder = opendal::services::Fs::default();
     opendal_service_builder.root("data/");
 
-    let schema = Schema::build(QueryRoot, MutationRoot, EmptySubscription).data(state::State {
+    let schema = Schema::build(
+        MergedQueryRoot::default(),
+        MergedMutationRoot::default(),
+        EmptySubscription,
+    )
+    .data(state::State {
         inner: Arc::new(state::InnerState {
             site_name: "DreamH",
             info: ApiInfo {

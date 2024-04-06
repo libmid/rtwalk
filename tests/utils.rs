@@ -15,15 +15,15 @@ use surrealdb::Surreal;
 use tower_cookies::Key;
 
 use rtwalk::gql::ApiInfo;
-use rtwalk::gql::MutationRoot;
-use rtwalk::gql::QueryRoot;
+use rtwalk::gql::MergedMutationRoot;
+use rtwalk::gql::MergedQueryRoot;
 use rtwalk::state::InnerState;
 use rtwalk::state::State;
 
 pub async fn setup(
     test_name: &str,
 ) -> Result<(
-    Schema<QueryRoot, MutationRoot, EmptySubscription>,
+    Schema<MergedQueryRoot, MergedMutationRoot, EmptySubscription>,
     (
         Surreal<surrealdb::engine::remote::ws::Client>,
         Client,
@@ -50,28 +50,32 @@ pub async fn setup(
     let mut opendal_service_builder = opendal::services::Fs::default();
     opendal_service_builder.root("data/");
 
-    let schema = Schema::build(QueryRoot, MutationRoot, EmptySubscription)
-        .data(State {
-            inner: Arc::new(InnerState {
-                site_name: "DreamH",
-                info: ApiInfo {
-                    major: 0,
-                    minor: 1,
-                    bugfix: 0,
-                    rte: "ws://localhost:4001/rte",
-                    vc: "ws://localhost:4002/ws",
-                },
-                redis: redis.clone(),
-                pubsub: pubsub_redis.clone(),
-                db: surreal_client.clone(),
-                op: Operator::new(opendal_service_builder)?.finish(),
-                cookie_key: Key::from(cookies_key.as_bytes()),
-                paseto_key: PasetoSymmetricKey::<V4, Local>::from(
-                    rusty_paseto::prelude::Key::from(cookies_key[..32].as_bytes()),
-                ),
-            }),
-        })
-        .finish();
+    let schema = Schema::build(
+        MergedQueryRoot::default(),
+        MergedMutationRoot::default(),
+        EmptySubscription,
+    )
+    .data(State {
+        inner: Arc::new(InnerState {
+            site_name: "DreamH",
+            info: ApiInfo {
+                major: 0,
+                minor: 1,
+                bugfix: 0,
+                rte: "ws://localhost:4001/rte",
+                vc: "ws://localhost:4002/ws",
+            },
+            redis: redis.clone(),
+            pubsub: pubsub_redis.clone(),
+            db: surreal_client.clone(),
+            op: Operator::new(opendal_service_builder)?.finish(),
+            cookie_key: Key::from(cookies_key.as_bytes()),
+            paseto_key: PasetoSymmetricKey::<V4, Local>::from(rusty_paseto::prelude::Key::from(
+                cookies_key[..32].as_bytes(),
+            )),
+        }),
+    })
+    .finish();
 
     Ok((schema, (surreal_client, redis, pubsub_redis)))
 }
