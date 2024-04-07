@@ -30,6 +30,8 @@ pub enum RtwalkError {
     InvalidPasswordResetToken,
     #[error("Max file upload size exceeded")]
     MaxUploadSizeExceeded,
+    #[error("Page can only have 1 field except pageInfo")]
+    MultiplePageField,
 }
 
 impl ErrorExtensions for RtwalkError {
@@ -44,7 +46,7 @@ impl ErrorExtensions for RtwalkError {
             | RtwalkError::DatabaseError(_)
             | RtwalkError::RedisError(_) => {
                 error!("{:?}", self);
-                e.set("tp", "INTERNAL_ERROR")
+                e.set("tp", "INTERNAL_ERROR");
             }
             RtwalkError::UsernameAlreadyExists => {
                 trace!("{}", self);
@@ -73,6 +75,10 @@ impl ErrorExtensions for RtwalkError {
             RtwalkError::MaxUploadSizeExceeded => {
                 trace!("{}", self);
                 e.set("tp", "MAX_UPLOAD_SIZE_EXCEEDED")
+            }
+            RtwalkError::MultiplePageField => {
+                trace!("{}", self);
+                e.set("tp", "MULTIPLE_PAGE_FIELD")
             }
         })
     }

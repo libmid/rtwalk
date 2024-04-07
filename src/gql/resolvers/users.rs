@@ -1,8 +1,9 @@
-use async_graphql::{dataloader::*, SimpleObject};
+use async_graphql::SimpleObject;
 use async_graphql::{ComplexObject, Context, Object, ResultExt};
 use surrealdb::sql::Thing;
 
 use self::users::create_bot;
+use crate::gql::Page;
 use crate::{
     config,
     error::RtwalkError,
@@ -64,6 +65,13 @@ pub enum UserSelectCriteria {
     Username(String),
 }
 
+#[derive(OneofObject)]
+pub enum MultipleUserSelectCriteria {
+    Ids(Vec<String>),
+    Usernames(Vec<String>),
+    Search(String),
+}
+
 #[Object]
 impl UserQueryRoot {
     #[graphql(guard = Role::Authenticated)]
@@ -83,6 +91,21 @@ impl UserQueryRoot {
             .extend_err(|_, _| {})?;
 
         Ok(user.map(|x| x.into()))
+    }
+}
+
+#[ComplexObject]
+impl Page {
+    async fn user(
+        &self,
+        ctx: &Context<'_>,
+        criteria: MultipleUserSelectCriteria,
+    ) -> async_graphql::Result<Vec<User>> {
+        let state = state!(ctx);
+        let users = users::fetch_users(state, criteria)
+            .await
+            .extend_err(|_, _| {})?;
+        Ok(users.into_iter().map(|x| x.into()).collect())
     }
 }
 

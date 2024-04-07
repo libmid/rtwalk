@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::config;
 use crate::models::user::User;
 use crate::{
@@ -23,7 +25,7 @@ use rusty_paseto::prelude::*;
 use surrealdb::sql::{Datetime, Thing};
 use zxcvbn::zxcvbn;
 
-use super::resolvers::users::UserSelectCriteria;
+use super::resolvers::users::{MultipleUserSelectCriteria, UserSelectCriteria};
 
 pub struct PasswordValidator<'a>(pub &'a str, pub &'a str);
 
@@ -551,6 +553,41 @@ pub async fn fetch_user(
 
             res.take(0)?
         }
+    };
+
+    Ok(user)
+}
+
+pub async fn fetch_users(
+    state: &State,
+    criteria: MultipleUserSelectCriteria,
+) -> Result<Vec<DBUser>, RtwalkError> {
+    let user: Vec<DBUser> = match criteria {
+        MultipleUserSelectCriteria::Ids(ids) => {
+            let mut res = state
+                .db
+                .query("SELECT * FROM $ids")
+                .bind((
+                    "ids",
+                    ids.into_iter()
+                        .map(|x| Thing {
+                            tb: "user".into(),
+                            id: x.into(),
+                        })
+                        .collect::<Vec<_>>(),
+                ))
+                .await?;
+            res.take(0)?
+        }
+        MultipleUserSelectCriteria::Usernames(usernames) => {
+            let mut res = state
+                .db
+                .query("SELECT * FROM user WHERE username IN $usernames")
+                .bind(("usernames", usernames))
+                .await?;
+            res.take(0)?
+        }
+        MultipleUserSelectCriteria::Search(_) => todo!(),
     };
 
     Ok(user)

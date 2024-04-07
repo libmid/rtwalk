@@ -1,10 +1,11 @@
+use std::sync::atomic::{AtomicBool, AtomicU32};
+
 use crate::{
     error::{Result, RtwalkError},
-    models::user::User,
     state::Auth,
 };
 use async_graphql::{
-    Context, ErrorExtensions, Guard, MergedObject, Object, ResultExt, SimpleObject,
+    scalar, Context, ErrorExtensions, Guard, MergedObject, Object, ResultExt, SimpleObject,
 };
 use rustis::commands::StringCommands;
 
@@ -17,6 +18,7 @@ macro_rules! state {
         $ctx.data_unchecked::<State>()
     }};
 }
+use serde::{Deserialize, Serialize};
 pub(crate) use state;
 
 macro_rules! cookies {
@@ -105,11 +107,65 @@ impl Guard for Role {
     }
 }
 
+#[derive(SimpleObject)]
+#[graphql(complex)]
+pub struct Page {
+    /// IMPORTANT: pageInfo must always be placed after your query
+    page_info: PageInfo,
+}
+
+#[derive(SimpleObject, Default)]
+pub struct PageInfo {
+    #[graphql(skip)]
+    pub page: u32,
+    #[graphql(skip)]
+    pub per_page: u32,
+    total: TotalCount,
+    has_next_page: HasNextPage,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct TotalCount(pub AtomicU32);
+#[derive(Serialize, Deserialize, Default)]
+pub struct HasNextPage(pub AtomicBool);
+
+scalar!(TotalCount, "Int");
+scalar!(HasNextPage, "Boolean");
+
 #[Object]
 impl QueryRoot {
     async fn info(&self, ctx: &Context<'_>) -> ApiInfo {
         let state = state!(ctx);
         state.info
+    }
+
+    #[graphql(name = "Page")]
+    async fn page(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(default = 1)] page: u32,
+        #[graphql(default = 20)] per_page: u32,
+    ) -> Result<Page> {
+        for field in ctx.look_ahead().selection_fields() {
+            if field.name() == "Page" {
+                let mut set_count = 0;
+                for set in field.selection_set() {
+                    if set.name() != "pageInfo" {
+                        set_count += 1;
+                    }
+                }
+                if set_count > 1 {
+                    return Err(RtwalkError::MultiplePageField).extend_err(|_, _| {});
+                }
+            }
+        }
+        Ok(Page {
+            page_info: PageInfo {
+                page,
+                per_page,
+                ..Default::default()
+            },
+        })
     }
 }
 
