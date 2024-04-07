@@ -13,7 +13,7 @@
 
 - [x] Endpoint for current logged in user
 - [x] Fetch single user
-- [ ] Fetch multiple users
+- [x] Fetch multiple users
 - [x] Fetch bots owned by user
 - [ ] Fetch files owned by user
 - [ ] Delete files
