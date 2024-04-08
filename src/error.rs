@@ -20,6 +20,8 @@ pub enum RtwalkError {
     DatabaseError(#[from] surrealdb::Error),
     #[error("Internal server error")]
     RedisError(#[from] rustis::Error),
+    #[error("Internal server error")]
+    OpendalError(#[from] opendal::Error),
     #[error("Your verification code has expired. Register again.")]
     VerificationCodeExpired,
     #[error("Invalid verification code")]
@@ -44,7 +46,8 @@ impl ErrorExtensions for RtwalkError {
             RtwalkError::InternalError(_)
             | RtwalkError::ImpossibleError(_, _)
             | RtwalkError::DatabaseError(_)
-            | RtwalkError::RedisError(_) => {
+            | RtwalkError::RedisError(_)
+            | RtwalkError::OpendalError(_) => {
                 error!("{:?}", self);
                 e.set("tp", "INTERNAL_ERROR");
             }

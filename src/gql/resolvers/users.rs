@@ -107,6 +107,27 @@ impl Page {
             .extend_err(|_, _| {})?;
         Ok(users.into_iter().map(|x| x.into()).collect())
     }
+
+    #[graphql(guard = Role::Authenticated)]
+    async fn file(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<File>> {
+        let state = state!(ctx);
+        let user = user!(ctx);
+        let files = state
+            .op
+            .list_with(&(user.id + "/"))
+            .await
+            .map_err(|e| RtwalkError::OpendalError(e))
+            .extend_err(|_, _| {})?
+            .into_iter()
+            .skip(((self.page_info.page - 1) * self.page_info.per_page) as usize)
+            .take(self.page_info.per_page as usize)
+            .map(|f| File {
+                loc: f.path().to_string() + f.name(),
+            })
+            .collect();
+
+        Ok(files)
+    }
 }
 
 #[derive(SimpleObject)]
@@ -532,6 +553,7 @@ impl UserMutationRoot {
     async fn update_user(
         &self,
         ctx: &Context<'_>,
+        #[graphql(validator(min_length = 4, max_length = 20, regex = r"^[a-z0-9_]+$"))]
         username: Option<String>,
         display_name: Option<String>,
         bio: MaybeUndefined<String>,
