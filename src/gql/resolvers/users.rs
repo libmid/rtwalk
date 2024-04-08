@@ -102,7 +102,7 @@ impl Page {
         criteria: MultipleUserSelectCriteria,
     ) -> async_graphql::Result<Vec<User>> {
         let state = state!(ctx);
-        let users = users::fetch_users(state, criteria)
+        let users = users::fetch_users(state, criteria, &self.page_info)
             .await
             .extend_err(|_, _| {})?;
         Ok(users.into_iter().map(|x| x.into()).collect())

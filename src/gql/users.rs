@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::config;
 use crate::models::user::User;
 use crate::{
@@ -26,6 +24,7 @@ use surrealdb::sql::{Datetime, Thing};
 use zxcvbn::zxcvbn;
 
 use super::resolvers::users::{MultipleUserSelectCriteria, UserSelectCriteria};
+use super::PageInfo;
 
 pub struct PasswordValidator<'a>(pub &'a str, pub &'a str);
 
@@ -561,12 +560,19 @@ pub async fn fetch_user(
 pub async fn fetch_users(
     state: &State,
     criteria: MultipleUserSelectCriteria,
+    page_info: &PageInfo,
 ) -> Result<Vec<DBUser>, RtwalkError> {
     let user: Vec<DBUser> = match criteria {
         MultipleUserSelectCriteria::Ids(ids) => {
-            let mut res = state
+            let mut query = state
                 .db
-                .query("SELECT * FROM $ids")
+                .query("SELECT * FROM $ids LIMIT $limit START $start");
+
+            if page_info.needs_page_info {
+                query = query.query("SELECT count() as total FROM $ids");
+            }
+
+            let mut res = query
                 .bind((
                     "ids",
                     ids.into_iter()
@@ -576,18 +582,83 @@ pub async fn fetch_users(
                         })
                         .collect::<Vec<_>>(),
                 ))
+                .bind(("limit", page_info.per_page))
+                .bind(("start", (page_info.page - 1) * page_info.per_page))
                 .await?;
+
+            if page_info.needs_page_info {
+                if let Some(total) = res.take((1, "total"))? {
+                    page_info
+                        .total
+                        .0
+                        .store(total, std::sync::atomic::Ordering::Relaxed);
+                    page_info.has_next_page.0.store(
+                        total > (page_info.page - 1) * page_info.per_page + page_info.per_page,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+            }
+
             res.take(0)?
         }
         MultipleUserSelectCriteria::Usernames(usernames) => {
-            let mut res = state
+            let mut query = state
                 .db
-                .query("SELECT * FROM user WHERE username IN $usernames")
+                .query("SELECT * FROM user WHERE username IN $usernames LIMIT $limit START $start");
+
+            if page_info.needs_page_info {
+                query =
+                    query.query("SELECT count() as total FROM user WHERE username IN $usernames");
+            }
+
+            let mut res = query
                 .bind(("usernames", usernames))
+                .bind(("limit", page_info.per_page))
+                .bind(("start", (page_info.page - 1) * page_info.per_page))
                 .await?;
+
+            if page_info.needs_page_info {
+                if let Some(total) = res.take((1, "total"))? {
+                    page_info
+                        .total
+                        .0
+                        .store(total, std::sync::atomic::Ordering::Relaxed);
+                    page_info.has_next_page.0.store(
+                        total > (page_info.page - 1) * page_info.per_page + page_info.per_page,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+            }
             res.take(0)?
         }
-        MultipleUserSelectCriteria::Search(_) => todo!(),
+        MultipleUserSelectCriteria::Search(search) => {
+            let mut query = state
+                .db
+                .query("SELECT * FROM user WHERE username @0@ $query OR display_name @1@ $query OR bio @2@ $query ORDER BY created_at ASC LIMIT $limit START $start");
+            if page_info.needs_page_info {
+                query = query.query("SELECT count() as total FROM user WHERE username @0@ $query OR display_name @1@ $query OR bio @2@ $query")
+            }
+            let mut res = query
+                .bind(("query", search))
+                .bind(("limit", page_info.per_page))
+                .bind(("start", (page_info.page - 1) * page_info.per_page))
+                .await?;
+
+            if page_info.needs_page_info {
+                if let Some(total) = res.take((1, "total"))? {
+                    page_info
+                        .total
+                        .0
+                        .store(total, std::sync::atomic::Ordering::Relaxed);
+                    page_info.has_next_page.0.store(
+                        total > (page_info.page - 1) * page_info.per_page + page_info.per_page,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+            }
+
+            res.take(0)?
+        }
     };
 
     Ok(user)

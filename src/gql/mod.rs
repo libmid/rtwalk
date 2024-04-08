@@ -108,7 +108,7 @@ impl Guard for Role {
 }
 
 #[derive(SimpleObject)]
-#[graphql(complex)]
+#[graphql(complex, serial)]
 pub struct Page {
     /// IMPORTANT: pageInfo must always be placed after your query
     page_info: PageInfo,
@@ -120,6 +120,8 @@ pub struct PageInfo {
     pub page: u32,
     #[graphql(skip)]
     pub per_page: u32,
+    #[graphql(skip)]
+    needs_page_info: bool,
     total: TotalCount,
     has_next_page: HasNextPage,
 }
@@ -146,12 +148,16 @@ impl QueryRoot {
         #[graphql(default = 1)] page: u32,
         #[graphql(default = 20)] per_page: u32,
     ) -> Result<Page> {
+        let mut needs_page_info = false;
+
         for field in ctx.look_ahead().selection_fields() {
             if field.name() == "Page" {
                 let mut set_count = 0;
                 for set in field.selection_set() {
                     if set.name() != "pageInfo" {
                         set_count += 1;
+                    } else {
+                        needs_page_info = true;
                     }
                 }
                 if set_count > 1 {
@@ -163,6 +169,7 @@ impl QueryRoot {
             page_info: PageInfo {
                 page,
                 per_page,
+                needs_page_info,
                 ..Default::default()
             },
         })

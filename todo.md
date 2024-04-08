@@ -17,7 +17,7 @@
 - [x] Fetch bots owned by user
 - [ ] Fetch files owned by user
 - [ ] Delete files
-- [ ] User search
+- [x] User search
 
 - [ ] Create forum
 - [ ] Edit forum
