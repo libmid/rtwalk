@@ -120,6 +120,7 @@ pub async fn push_pending(
         },
         email,
         password: password_hash,
+        banned: false,
     };
     // Push the state into redis with a ttl.
     let mut pipeline = state.redis.create_pipeline();
@@ -328,6 +329,7 @@ pub async fn create_bot(
         },
         email,
         password: password_hash,
+        banned: false,
     };
 
     let bot = create_user(state, bot, secret).await?;
@@ -344,7 +346,7 @@ pub async fn login_user(
     // First try to find user and their secret
     let mut res = state
         .db
-        .query("SELECT password, user.* AS user FROM user_secret WHERE email = $email")
+        .query("SELECT password, banned, user.* AS user FROM user_secret WHERE email = $email")
         .bind(("email", &email))
         .await?;
     let password_hash: Option<String> = res.take((0, "password"))?;
@@ -366,6 +368,11 @@ pub async fn login_user(
         .await
         .map_err(|e| RtwalkError::InternalError(e.into()))??
         {
+            let banned: Option<bool> = res.take((0, "banned"))?;
+            if banned.unwrap() {
+                return Err(RtwalkError::BannedUser);
+            }
+
             let user: Option<DBUser> = res.take((0, "user"))?;
             return Ok(user.ok_or(RtwalkError::ImpossibleError(
                 "Secret exists but user doesnt",

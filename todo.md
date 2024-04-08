@@ -10,6 +10,7 @@
 - [ ] Change email
 - [x] Update user
 - [ ] Delete user
+- [ ] Ban user
 
 - [x] Endpoint for current logged in user
 - [x] Fetch single user
@@ -19,24 +20,28 @@
 - [x] Delete files
 - [x] User search
 
+
 - [ ] Create forum
 - [ ] Edit forum
 - [ ] Add moderator
-- [ ] Ban user
+- [ ] Ban user from forum
 - [ ] Remove moderator
-- [ ] Unban user 
+- [ ] Unban user from forum
 - [ ] Transfer ownership
 - [ ] Delete forum
+
 
 - [ ] Fetch single forum
 - [ ] Fetch multiple forums
 - [ ] Forum search
+
 
 - [ ] Create post
 - [ ] Edit post
 - [ ] Delete post
 - [ ] Upvote post
 - [ ] Downvote post
+
 
 - [ ] Fetch single post
 - [ ] Fetch multiple posts

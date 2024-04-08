@@ -34,6 +34,8 @@ pub enum RtwalkError {
     MaxUploadSizeExceeded,
     #[error("Page can only have 1 field except pageInfo")]
     MultiplePageField,
+    #[error("User is permanently banned")]
+    BannedUser,
 }
 
 impl ErrorExtensions for RtwalkError {
@@ -53,35 +55,39 @@ impl ErrorExtensions for RtwalkError {
             }
             RtwalkError::UsernameAlreadyExists => {
                 trace!("{}", self);
-                e.set("tp", "USERNAME_ALREADY_EXISTS")
+                e.set("tp", "USERNAME_ALREADY_EXISTS");
             }
             RtwalkError::VerificationCodeExpired => {
                 trace!("{}", self);
-                e.set("tp", "VERIFICATION_CODE_EXPIRED")
+                e.set("tp", "VERIFICATION_CODE_EXPIRED");
             }
             RtwalkError::InvalidVerificationCode => {
                 trace!("{}", self);
-                e.set("tp", "INVALID_VERIFICATION_CODE")
+                e.set("tp", "INVALID_VERIFICATION_CODE");
             }
             RtwalkError::InvalidCredentials => {
                 trace!("{}", self);
-                e.set("tp", "INVALID_CREDENTIALS")
+                e.set("tp", "INVALID_CREDENTIALS");
             }
             RtwalkError::UnauhorizedRequest => {
                 trace!("{}", self);
-                e.set("tp", "UNAUTHORIZED_REQUEST")
+                e.set("tp", "UNAUTHORIZED_REQUEST");
             }
             RtwalkError::InvalidPasswordResetToken => {
                 trace!("{}", self);
-                e.set("tp", "INVALID_PASSWORD_RESET_TOKEN")
+                e.set("tp", "INVALID_PASSWORD_RESET_TOKEN");
             }
             RtwalkError::MaxUploadSizeExceeded => {
                 trace!("{}", self);
-                e.set("tp", "MAX_UPLOAD_SIZE_EXCEEDED")
+                e.set("tp", "MAX_UPLOAD_SIZE_EXCEEDED");
             }
             RtwalkError::MultiplePageField => {
                 trace!("{}", self);
-                e.set("tp", "MULTIPLE_PAGE_FIELD")
+                e.set("tp", "MULTIPLE_PAGE_FIELD");
+            }
+            RtwalkError::BannedUser => {
+                trace!("{}", self);
+                e.set("tp", "BANNED_USER");
             }
         })
     }

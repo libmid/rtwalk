@@ -47,6 +47,7 @@ pub struct DBUserSecret {
     pub user: Thing,
     pub email: String,
     pub password: String,
+    pub banned: bool,
 }
 
 #[derive(SimpleObject, Serialize, Deserialize, Debug)]
