@@ -575,11 +575,7 @@ impl UserMutationRoot {
             user.bio = Some(v);
         }
         if pfp.is_null() {
-            user.pfp
-                .delete(&state.op)
-                .await
-                .map_err(|e| RtwalkError::InternalError(e))
-                .extend_err(|_, _| {})?;
+            user.pfp.delete(&state.op).await.extend_err(|_, _| {})?;
             user.pfp = None;
         } else if let MaybeUndefined::Value(v) = pfp {
             let mut upload_value = v.value(&ctx)?;
@@ -587,11 +583,7 @@ impl UserMutationRoot {
                 return Err(RtwalkError::MaxUploadSizeExceeded).extend_err(|_, _| {})?;
             }
 
-            user.pfp
-                .delete(&state.op)
-                .await
-                .map_err(|e| RtwalkError::InternalError(e))
-                .extend_err(|_, _| {})?;
+            user.pfp.delete(&state.op).await.extend_err(|_, _| {})?;
 
             let pfp_file = File {
                 loc: format!("{}/{}-{}", &user.id, cuid(), upload_value.filename),
@@ -599,16 +591,11 @@ impl UserMutationRoot {
             pfp_file
                 .save(&state.op, &mut upload_value)
                 .await
-                .map_err(|e| RtwalkError::InternalError(e))
                 .extend_err(|_, _| {})?;
             user.pfp = Some(pfp_file);
         }
         if banner.is_null() {
-            user.banner
-                .delete(&state.op)
-                .await
-                .map_err(|e| RtwalkError::InternalError(e))
-                .extend_err(|_, _| {})?;
+            user.banner.delete(&state.op).await.extend_err(|_, _| {})?;
 
             user.banner = None;
         } else if let MaybeUndefined::Value(v) = banner {
@@ -617,11 +604,7 @@ impl UserMutationRoot {
                 return Err(RtwalkError::MaxUploadSizeExceeded).extend_err(|_, _| {})?;
             }
 
-            user.banner
-                .delete(&state.op)
-                .await
-                .map_err(|e| RtwalkError::InternalError(e))
-                .extend_err(|_, _| {})?;
+            user.banner.delete(&state.op).await.extend_err(|_, _| {})?;
 
             let banner_file = File {
                 loc: format!("{}/{}-{}", &user.id, cuid(), upload_value.filename),
@@ -629,7 +612,6 @@ impl UserMutationRoot {
             banner_file
                 .save(&state.op, &mut upload_value)
                 .await
-                .map_err(|e| RtwalkError::InternalError(e))
                 .extend_err(|_, _| {})?;
             user.banner = Some(banner_file);
         }
@@ -696,5 +678,19 @@ impl UserMutationRoot {
         signed_jar.add(cookie);
 
         Ok(user)
+    }
+
+    #[graphql(guard = Role::Authenticated)]
+    async fn delete_file(&self, ctx: &Context<'_>, loc: String) -> async_graphql::Result<bool> {
+        let state = state!(ctx);
+        let user = user!(ctx);
+
+        if let Some(user_id) = loc.split('/').next() {
+            if user_id == user.id || user.admin {
+                File { loc }.delete(&state.op).await.extend_err(|_, _| {})?;
+            }
+        }
+
+        Ok(true)
     }
 }

@@ -15,8 +15,8 @@
 - [x] Fetch single user
 - [x] Fetch multiple users
 - [x] Fetch bots owned by user
-- [ ] Fetch files owned by user
-- [ ] Delete files
+- [x] Fetch files owned by user
+- [x] Delete files
 - [x] User search
 
 - [ ] Create forum
