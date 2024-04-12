@@ -21,7 +21,7 @@
 - [x] User search
 
 
-- [ ] Create forum
+- [x] Create forum
 - [ ] Edit forum
 - [ ] Add moderator
 - [ ] Ban user from forum
@@ -33,6 +33,7 @@
 
 - [ ] Fetch single forum
 - [ ] Fetch multiple forums
+- [ ] Fetch moderators
 - [ ] Forum search
 
 

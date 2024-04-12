@@ -1,5 +1,6 @@
 use crate::config;
 use crate::models::user::User;
+use crate::models::Id;
 use crate::{
     error::RtwalkError,
     models::user::{DBUser, DBUserSecret},
@@ -112,14 +113,14 @@ pub async fn push_pending(
         format!("pending_secret:{}", &username),
         format!("verification_code:{}", &username),
     );
-    let user = DBUser::new(username, false, None);
+    let user = DBUser::new(username.into(), false, None);
     let secret = DBUserSecret {
         user: Thing {
             tb: "user".into(),
             id: user.id.clone().into(),
         },
-        email,
-        password: password_hash,
+        email: email.into(),
+        password: password_hash.into(),
         banned: false,
     };
     // Push the state into redis with a ttl.
@@ -261,11 +262,11 @@ pub async fn verify_user(
     Err(RtwalkError::VerificationCodeExpired)
 }
 
-async fn create_user(
+async fn create_user<'r>(
     state: &State,
-    user: DBUser,
-    secret: DBUserSecret,
-) -> Result<DBUser, RtwalkError> {
+    user: DBUser<'r>,
+    secret: DBUserSecret<'r>,
+) -> Result<DBUser<'r>, RtwalkError> {
     state
         .db
         .query("BEGIN TRANSACTION")
@@ -280,7 +281,7 @@ async fn create_user(
 
 pub async fn create_bot(
     state: &State,
-    owner_id: String,
+    owner_id: Id,
     username: String,
 ) -> Result<(String, DBUser), RtwalkError> {
     let mut exists = state
@@ -315,11 +316,11 @@ pub async fn create_bot(
     .map_err(|e| RtwalkError::InternalError(e.into()))??;
 
     let bot = DBUser::new(
-        username,
+        username.into(),
         true,
         Some(Thing {
             tb: "user".into(),
-            id: owner_id.into(),
+            id: owner_id.0,
         }),
     );
     let secret = DBUserSecret {
@@ -327,8 +328,8 @@ pub async fn create_bot(
             tb: "user".into(),
             id: bot.id.clone().into(),
         },
-        email,
-        password: password_hash,
+        email: email.into(),
+        password: password_hash.into(),
         banned: false,
     };
 
@@ -384,11 +385,11 @@ pub async fn login_user(
     return Err(RtwalkError::InvalidCredentials);
 }
 
-pub async fn verify_bot_belongs_to_user(
+pub async fn verify_bot_belongs_to_user<'r>(
     state: &State,
-    user_id: &str,
-    bot_id: &str,
-) -> Result<DBUser, RtwalkError> {
+    user_id: &Id,
+    bot_id: &Id,
+) -> Result<DBUser<'r>, RtwalkError> {
     let mut bot = state
         .db
         .query("SELECT * FROM user WHERE id = $id")
@@ -396,7 +397,7 @@ pub async fn verify_bot_belongs_to_user(
             "id",
             Thing {
                 tb: "user".into(),
-                id: bot_id.into(),
+                id: bot_id.0.clone(),
             },
         ))
         .await?;
@@ -404,7 +405,7 @@ pub async fn verify_bot_belongs_to_user(
 
     if let Some(bot) = bot {
         if let Some(ref owner) = bot.owner {
-            if owner.id.to_raw() == user_id {
+            if owner.id == user_id.0 {
                 return Ok(bot);
             }
         }
@@ -412,7 +413,7 @@ pub async fn verify_bot_belongs_to_user(
     Err(RtwalkError::UnauhorizedRequest)
 }
 
-pub async fn reset_bot_password(state: &State, bot_id: &str) -> Result<String, RtwalkError> {
+pub async fn reset_bot_password(state: &State, bot_id: &Id) -> Result<String, RtwalkError> {
     let password = cuid();
 
     let creds = format!("@{}", &password);
@@ -436,7 +437,7 @@ pub async fn reset_bot_password(state: &State, bot_id: &str) -> Result<String, R
             "user",
             Thing {
                 tb: "user".into(),
-                id: bot_id.into(),
+                id: bot_id.0.clone(),
             },
         ))
         .await?;
@@ -524,7 +525,10 @@ pub async fn set_new_password(
     Err(RtwalkError::InvalidPasswordResetToken)
 }
 
-pub async fn update_user(state: &State, updated_user: User) -> Result<DBUser, RtwalkError> {
+pub async fn update_user<'r1, 'r2>(
+    state: &State,
+    updated_user: User<'r1>,
+) -> Result<DBUser<'r2>, RtwalkError> {
     let mut db_user: DBUser = updated_user.into();
     db_user.modified_at = Datetime::default();
 
@@ -564,11 +568,11 @@ pub async fn fetch_user(
     Ok(user)
 }
 
-pub async fn fetch_users(
+pub async fn fetch_users<'r>(
     state: &State,
     criteria: MultipleUserSelectCriteria,
     page_info: &PageInfo,
-) -> Result<Vec<DBUser>, RtwalkError> {
+) -> Result<Vec<DBUser<'r>>, RtwalkError> {
     let user: Vec<DBUser> = match criteria {
         MultipleUserSelectCriteria::Ids(ids) => {
             let mut query = state

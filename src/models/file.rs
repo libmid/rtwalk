@@ -5,7 +5,7 @@ use std::io::Read;
 
 use crate::error::RtwalkError;
 
-#[derive(SimpleObject, Serialize, Deserialize, Debug)]
+#[derive(SimpleObject, Serialize, Deserialize, Debug, Clone)]
 pub struct File {
     pub loc: String,
 }

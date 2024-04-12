@@ -36,6 +36,8 @@ pub enum RtwalkError {
     MultiplePageField,
     #[error("User is permanently banned")]
     BannedUser,
+    #[error("Forum already exists")]
+    ForumAlreadyExists,
 }
 
 impl ErrorExtensions for RtwalkError {
@@ -88,6 +90,10 @@ impl ErrorExtensions for RtwalkError {
             RtwalkError::BannedUser => {
                 trace!("{}", self);
                 e.set("tp", "BANNED_USER");
+            }
+            RtwalkError::ForumAlreadyExists => {
+                trace!("{}", self);
+                e.set("tp", "FORUM_ALREADY_EXISTS");
             }
         })
     }

@@ -32,4 +32,4 @@ impl Deref for State {
 }
 
 #[derive(Default)]
-pub struct Auth(pub Mutex<Option<User>>);
+pub struct Auth<'a>(pub Mutex<Option<User<'a>>>);
