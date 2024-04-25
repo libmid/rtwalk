@@ -188,7 +188,7 @@ impl UserMutationRoot {
     async fn login<'r>(
         &self,
         ctx: &Context<'r>,
-        #[graphql(validator(max_length = 100, email))] email: String,
+        #[graphql(validator(max_length = 100))] email: String,
         #[graphql(validator(min_length = 4, max_length = 64,))] password: String,
     ) -> async_graphql::Result<User<'r>> {
         // Sends total of 1 database query and 1 redis query on success.

@@ -5,6 +5,7 @@ use crate::gql::ApiInfo;
 use async_graphql::{http::GraphiQLSource, EmptySubscription, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
+    http::{header::CONTENT_TYPE, Method},
     response::{Html, IntoResponse},
     routing::get,
     Extension, Router,
@@ -22,6 +23,7 @@ use state::Auth;
 use surrealdb::{engine::remote::ws::Ws, opt::auth::Database, Surreal};
 use tokio::net::TcpListener;
 use tower_cookies::{CookieManagerLayer, Cookies, Key};
+use tower_http::cors::CorsLayer;
 use tracing::info;
 
 pub(crate) mod config;
@@ -131,6 +133,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let app = Router::new()
         .route("/", get(graphiql).post(gql))
+        .layer(
+            CorsLayer::new()
+                .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+                .allow_origin([
+                    "https://dreamh.net".parse().unwrap(),
+                    "http://localhost:5173".parse().unwrap(),
+                ])
+                .allow_credentials(true)
+                .allow_headers([CONTENT_TYPE]),
+        )
         .layer(CookieManagerLayer::new())
         .layer(Extension(schema.finish()));
 

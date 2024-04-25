@@ -1,8 +1,8 @@
-use async_graphql::{Context, Object, ResultExt};
+use async_graphql::{Context, MaybeUndefined, Object, ResultExt, Upload};
 
 use crate::{
     gql::{forums, state, user},
-    models::forum::Forum,
+    models::{forum::Forum, Id},
 };
 
 use super::super::Role;
@@ -22,5 +22,20 @@ impl ForumMutationRoot {
             .extend_err(|_, _| {})?;
 
         Ok(user.into())
+    }
+
+    #[graphql(guard = Role::Human)]
+    async fn update_forum<'r>(
+        &self,
+        ctx: &Context<'r>,
+        forum_id: Id,
+        #[graphql(validator(min_length = 4, max_length = 20, regex = r"^[a-z0-9_]+$"))]
+        name: Option<String>,
+        display_name: Option<String>,
+        description: MaybeUndefined<String>,
+        icon: MaybeUndefined<Upload>,
+        banner: MaybeUndefined<Upload>,
+    ) -> async_graphql::Result<Forum<'r>> {
+        todo!()
     }
 }
