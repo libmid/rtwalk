@@ -38,6 +38,8 @@ pub enum RtwalkError {
     BannedUser,
     #[error("Forum already exists")]
     ForumAlreadyExists,
+    #[error("Internal error")]
+    SmtpError(#[from] lettre::transport::smtp::Error),
 }
 
 impl ErrorExtensions for RtwalkError {
@@ -51,7 +53,8 @@ impl ErrorExtensions for RtwalkError {
             | RtwalkError::ImpossibleError(_, _)
             | RtwalkError::DatabaseError(_)
             | RtwalkError::RedisError(_)
-            | RtwalkError::OpendalError(_) => {
+            | RtwalkError::OpendalError(_)
+            | RtwalkError::SmtpError(_) => {
                 error!("{:?}", self);
                 e.set("tp", "INTERNAL_ERROR");
             }

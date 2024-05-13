@@ -1,6 +1,9 @@
+use std::env;
+
 use crate::config;
 use crate::models::user::User;
 use crate::models::Id;
+use crate::template::EmailVerify;
 use crate::{
     error::RtwalkError,
     models::user::{DBUser, DBUserSecret},
@@ -13,6 +16,9 @@ use argon2::{
 };
 use async_graphql::CustomValidator;
 use cuid2::cuid;
+use lettre::message::header::ContentType;
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use rand::Rng;
 
 use rustis::commands::GenericCommands;
@@ -21,6 +27,7 @@ use rustis::{
     commands::{SetCondition, SetExpiration, StringCommands},
 };
 use rusty_paseto::prelude::*;
+use sailfish::TemplateOnce;
 use surrealdb::sql::{Datetime, Thing};
 use zxcvbn::zxcvbn;
 
@@ -95,14 +102,46 @@ pub async fn push_pending(
     .map_err(|e| RtwalkError::InternalError(e.into()))??;
     // We have verified and confirmed user is valid, generate verification code.
     let code = rand::thread_rng().gen_range(10000..=99999);
-    // Send email to the user
-    // let _template = EmailVerify {
-    //     username: &username,
-    //     code,
-    //     site_name: state.site_name,
-    // }
-    // .render_once()
-    // .expect("Can't fail");
+
+    let template = EmailVerify {
+        username: &username,
+        code,
+        site_name: state.site_name,
+    }
+    .render_once()
+    .expect("Can't fail");
+
+    let email_message = Message::builder()
+        .from(
+            format!(
+                "{} <{}>",
+                env::var("SMTP_FROM_NAME").expect("SMTP_FROM_NAME must be set"),
+                env::var("SMTP_FROM").expect("SMTP_FROM must be set")
+            )
+            .parse()
+            .unwrap(),
+        )
+        .to(format!("{username} <{email}>").parse().unwrap())
+        .subject("Verify your email")
+        .header(ContentType::TEXT_HTML)
+        .body(template)
+        .unwrap();
+
+    let creds = Credentials::new(
+        env::var("SMTP_USERNAME").expect("SMTP_USERNAME must be set"),
+        env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set"),
+    );
+
+    let mailer: AsyncSmtpTransport<Tokio1Executor> =
+        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(
+            &env::var("SMTP_RELAY").expect("SMTP_RELAY must be set"),
+        )
+        .unwrap()
+        .credentials(creds)
+        .build();
+
+    mailer.send(email_message).await?;
+
     // TODO: Actually send the mail, just printing for now
     // WARNING: Dont forget this ^
     dbg!("Email verification code", code);

@@ -16,6 +16,7 @@ chrono = "0.4.37"
 cliparser = "0.1.2"
 cuid2 = "0.1.2"
 dotenvy = "0.15.7"
+lettre = { version = "0.11.7", features = ["tokio1", "tokio1-native-tls"] }
 opendal = { version = "0.45.0", features = ["services-fs"], default-features = false }
 rand = "0.8.5"
 rustis = "0.12.8"
