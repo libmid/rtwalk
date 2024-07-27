@@ -25,12 +25,13 @@
 ---
 
 - [x] Create forum
-- [ ] Edit forum
+- [x] Edit forum
 - [ ] Add moderator
 - [ ] Ban user from forum
 - [ ] Remove moderator
 - [ ] Unban user from forum
 - [ ] Transfer ownership
+- [ ] Lock forum
 - [ ] Delete forum
 
 ---

@@ -1,7 +1,7 @@
 use sailfish::TemplateOnce;
 
 #[derive(TemplateOnce)]
-#[template(path = "email_verify.stpl")]
+#[template(path = "email_verify.html")]
 pub struct EmailVerify<'a> {
     pub username: &'a str,
     pub code: u64,

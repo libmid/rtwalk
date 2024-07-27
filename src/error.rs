@@ -40,6 +40,10 @@ pub enum RtwalkError {
     ForumAlreadyExists,
     #[error("Internal error")]
     SmtpError(#[from] lettre::transport::smtp::Error),
+    #[error("Forum not found")]
+    ForumNotFound,
+    #[error("user not found")]
+    UserNotFound,
 }
 
 impl ErrorExtensions for RtwalkError {
@@ -97,6 +101,14 @@ impl ErrorExtensions for RtwalkError {
             RtwalkError::ForumAlreadyExists => {
                 trace!("{}", self);
                 e.set("tp", "FORUM_ALREADY_EXISTS");
+            }
+            RtwalkError::ForumNotFound => {
+                trace!("{}", self);
+                e.set("tp", "FORUM_NOT_FOUND");
+            }
+            RtwalkError::UserNotFound => {
+                trace!("{}", self);
+                e.set("tp", "USER_NOT_FOUND");
             }
         })
     }
