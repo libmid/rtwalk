@@ -47,8 +47,7 @@ pub async fn setup(
 
     let cookies_key = env::var("COOKIE_KEY").expect("COOKIE_KEY");
 
-    let mut opendal_service_builder = opendal::services::Fs::default();
-    opendal_service_builder.root("data/");
+    let opendal_service_builder = opendal::services::Fs::default().root("data/");
 
     let schema = Schema::build(
         MergedQueryRoot::default(),

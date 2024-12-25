@@ -1,9 +1,8 @@
 use async_graphql::SimpleObject;
 use async_graphql::{ComplexObject, Context, Object, ResultExt};
-use surrealdb::sql::Thing;
+use surrealdb::RecordId;
 
-use crate::gql::Page;
-use crate::models::Id;
+use crate::models::Key;
 use crate::{
     config,
     error::RtwalkError,
@@ -22,7 +21,7 @@ use super::super::{cookies, state, user, users, users::PasswordValidator, Role};
 use crate::models::user::{DBUser, User};
 
 #[ComplexObject]
-impl User<'_> {
+impl User {
     #[graphql(guard = Role::Authenticated)]
     async fn bots(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<User>> {
         let state = state!(ctx);
@@ -32,13 +31,7 @@ impl User<'_> {
             let mut res = state
                 .db
                 .query("SELECT * FROM user WHERE owner = $owner")
-                .bind((
-                    "owner",
-                    Thing {
-                        tb: "user".into(),
-                        id: self.id.clone().0,
-                    },
-                ))
+                .bind(("owner", RecordId::from_table_key("user", self.id.clone().0)))
                 .await
                 .map_err(|e| RtwalkError::from(e))
                 .extend_err(|_, _| {})?;
@@ -83,7 +76,7 @@ impl UserQueryRoot {
         &self,
         ctx: &Context<'r>,
         criteria: UserSelectCriteria,
-    ) -> async_graphql::Result<Option<User<'r>>> {
+    ) -> async_graphql::Result<Option<User>> {
         let state = state!(ctx);
 
         let user = users::fetch_user(state, criteria)
@@ -94,47 +87,11 @@ impl UserQueryRoot {
     }
 }
 
-#[ComplexObject]
-impl Page {
-    async fn user(
-        &self,
-        ctx: &Context<'_>,
-        criteria: MultipleUserSelectCriteria,
-    ) -> async_graphql::Result<Vec<User>> {
-        let state = state!(ctx);
-        let users = users::fetch_users(state, criteria, &self.page_info)
-            .await
-            .extend_err(|_, _| {})?;
-        Ok(users.into_iter().map(|x| x.into()).collect())
-    }
-
-    #[graphql(guard = Role::Authenticated)]
-    async fn file(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<File>> {
-        let state = state!(ctx);
-        let user = user!(ctx);
-        let files = state
-            .op
-            .list_with(&(user.id.to_string() + "/"))
-            .await
-            .map_err(|e| RtwalkError::OpendalError(e))
-            .extend_err(|_, _| {})?
-            .into_iter()
-            .skip(((self.page_info.page - 1) * self.page_info.per_page) as usize)
-            .take(self.page_info.per_page as usize)
-            .map(|f| File {
-                loc: f.path().to_string() + f.name(),
-            })
-            .collect();
-
-        Ok(files)
-    }
-}
-
 #[derive(SimpleObject)]
-struct Bot<'a> {
+struct Bot {
     token: String,
     #[graphql(flatten)]
-    bot: User<'a>,
+    bot: User,
 }
 
 #[derive(Default)]
@@ -175,7 +132,7 @@ impl UserMutationRoot {
         #[graphql(validator(min_length = 4, max_length = 20, regex = r"^[a-z0-9_]+$"))]
         username: String,
         code: u64,
-    ) -> async_graphql::Result<User<'r>> {
+    ) -> async_graphql::Result<User> {
         // Makes 1 database and 3 redis query on success.
         // Makes 3 (max) redis query on failure.
         Ok(users::verify_user(state!(ctx), username, code)
@@ -190,7 +147,7 @@ impl UserMutationRoot {
         ctx: &Context<'r>,
         #[graphql(validator(max_length = 100))] email: String,
         #[graphql(validator(min_length = 4, max_length = 64,))] password: String,
-    ) -> async_graphql::Result<User<'r>> {
+    ) -> async_graphql::Result<User> {
         // Sends total of 1 database query and 1 redis query on success.
         // 1 database query on failure.
 
@@ -225,11 +182,14 @@ impl UserMutationRoot {
             )
             .forget();
         pipeline
-            .sadd(format!("auth_session_tracker:{}", user.id.as_ref()), &token)
+            .sadd(
+                format!("auth_session_tracker:{}", user.id.to_string()),
+                &token,
+            )
             .forget();
         pipeline
             .expire(
-                format!("auth_session_tracker:{}", user.id.as_ref()),
+                format!("auth_session_tracker:{}", user.id.to_string()),
                 if user.bot {
                     config::BOT_SESSION_EXPIERY
                 } else {
@@ -279,7 +239,7 @@ impl UserMutationRoot {
             .forget();
         pipeline
             .srem(
-                format!("auth_session_tracker:{}", user.id.as_ref()),
+                format!("auth_session_tracker:{}", user.id.to_string()),
                 token.value(),
             )
             .forget();
@@ -303,7 +263,7 @@ impl UserMutationRoot {
 
         let sessions: Vec<String> = state
             .redis
-            .smembers(format!("auth_session_tracker:{}", user.id.as_ref()))
+            .smembers(format!("auth_session_tracker:{}", user.id.to_string()))
             .await
             .map_err(|e| RtwalkError::RedisError(e))
             .extend_err(|_, _| {})?;
@@ -312,7 +272,7 @@ impl UserMutationRoot {
             pipeline.del(format!("auth_session:{}", session)).forget();
         }
         pipeline
-            .del(format!("auth_session_tracker:{}", user.id.as_ref()))
+            .del(format!("auth_session_tracker:{}", user.id.to_string()))
             .forget();
         pipeline
             .execute()
@@ -333,7 +293,7 @@ impl UserMutationRoot {
         &self,
         ctx: &Context<'r>,
         username: String,
-    ) -> async_graphql::Result<Bot<'r>> {
+    ) -> async_graphql::Result<Bot> {
         let user = user!(ctx);
         // 2 database and 1 redis query on sucess
         let (token, bot) = users::create_bot(state!(ctx), user.id, username)
@@ -350,8 +310,8 @@ impl UserMutationRoot {
     async fn login_as_bot<'r>(
         &self,
         ctx: &Context<'r>,
-        bot_id: Id,
-    ) -> async_graphql::Result<User<'r>> {
+        bot_id: Key,
+    ) -> async_graphql::Result<User> {
         let user = user!(ctx);
         let state = state!(ctx);
         let cookies = cookies!(ctx);
@@ -376,7 +336,7 @@ impl UserMutationRoot {
                 .forget();
             pipeline
                 .srem(
-                    format!("auth_session_tracker:{}", user.id.as_ref()),
+                    format!("auth_session_tracker:{}", user.id.to_string()),
                     token.value(),
                 )
                 .forget();
@@ -413,11 +373,14 @@ impl UserMutationRoot {
                 )
                 .forget();
             pipeline
-                .sadd(format!("auth_session_tracker:{}", bot.id.as_ref()), &token)
+                .sadd(
+                    format!("auth_session_tracker:{}", bot.id.to_string()),
+                    &token,
+                )
                 .forget();
             pipeline
                 .expire(
-                    format!("auth_session_tracker:{}", bot.id.as_ref()),
+                    format!("auth_session_tracker:{}", bot.id.to_string()),
                     if bot.bot {
                         config::BOT_SESSION_EXPIERY
                     } else {
@@ -447,7 +410,7 @@ impl UserMutationRoot {
 
     /// Only non-bot accounts who own the bot can do this.
     #[graphql(guard = "Role::Human")]
-    async fn logout_all_bot(&self, ctx: &Context<'_>, bot_id: Id) -> async_graphql::Result<bool> {
+    async fn logout_all_bot(&self, ctx: &Context<'_>, bot_id: Key) -> async_graphql::Result<bool> {
         let user = user!(ctx);
         let state = state!(ctx);
 
@@ -458,7 +421,7 @@ impl UserMutationRoot {
 
         let sessions: Vec<String> = state
             .redis
-            .smembers(format!("auth_session_tracker:{}", bot.id.as_ref()))
+            .smembers(format!("auth_session_tracker:{}", bot.id.to_string()))
             .await
             .map_err(|e| RtwalkError::RedisError(e))
             .extend_err(|_, _| {})?;
@@ -467,7 +430,7 @@ impl UserMutationRoot {
             pipeline.del(format!("auth_session:{}", session)).forget();
         }
         pipeline
-            .del(format!("auth_session_tracker:{}", bot.id.as_ref()))
+            .del(format!("auth_session_tracker:{}", bot.id.to_string()))
             .forget();
         pipeline
             .execute()
@@ -483,8 +446,8 @@ impl UserMutationRoot {
     async fn reset_bot_token<'r>(
         &self,
         ctx: &Context<'r>,
-        bot_id: Id,
-    ) -> async_graphql::Result<Bot<'r>> {
+        bot_id: Key,
+    ) -> async_graphql::Result<Bot> {
         let user = user!(ctx);
         let state = state!(ctx);
 
@@ -501,7 +464,7 @@ impl UserMutationRoot {
         // logout the bot
         let sessions: Vec<String> = state
             .redis
-            .smembers(format!("auth_session_tracker:{}", bot.id.as_ref()))
+            .smembers(format!("auth_session_tracker:{}", bot.id.to_string()))
             .await
             .map_err(|e| RtwalkError::RedisError(e))
             .extend_err(|_, _| {})?;
@@ -510,7 +473,7 @@ impl UserMutationRoot {
             pipeline.del(format!("auth_session:{}", session)).forget();
         }
         pipeline
-            .del(format!("auth_session_tracker:{}", bot.id.as_ref()))
+            .del(format!("auth_session_tracker:{}", bot.id.to_string()))
             .forget();
         pipeline
             .execute()
@@ -569,7 +532,7 @@ impl UserMutationRoot {
         bio: MaybeUndefined<String>,
         pfp: MaybeUndefined<Upload>,
         banner: MaybeUndefined<Upload>,
-    ) -> async_graphql::Result<User<'r>> {
+    ) -> async_graphql::Result<User> {
         let mut user = user!(ctx);
         let state = state!(ctx);
 
@@ -596,7 +559,12 @@ impl UserMutationRoot {
             user.pfp.delete(&state.op).await.extend_err(|_, _| {})?;
 
             let pfp_file = File {
-                loc: format!("{}/{}-{}", user.id.as_ref(), cuid(), upload_value.filename),
+                loc: format!(
+                    "{}/{}-{}",
+                    user.id.to_string(),
+                    cuid(),
+                    upload_value.filename
+                ),
             };
             pfp_file
                 .save(&state.op, &mut upload_value)
@@ -617,7 +585,12 @@ impl UserMutationRoot {
             user.banner.delete(&state.op).await.extend_err(|_, _| {})?;
 
             let banner_file = File {
-                loc: format!("{}/{}-{}", user.id.as_ref(), cuid(), upload_value.filename),
+                loc: format!(
+                    "{}/{}-{}",
+                    user.id.to_string(),
+                    cuid(),
+                    upload_value.filename
+                ),
             };
             banner_file
                 .save(&state.op, &mut upload_value)
@@ -658,11 +631,14 @@ impl UserMutationRoot {
             )
             .forget();
         pipeline
-            .sadd(format!("auth_session_tracker:{}", user.id.as_ref()), &token)
+            .sadd(
+                format!("auth_session_tracker:{}", user.id.to_string()),
+                &token,
+            )
             .forget();
         pipeline
             .expire(
-                format!("auth_session_tracker:{}", user.id.as_ref()),
+                format!("auth_session_tracker:{}", user.id.to_string()),
                 if user.bot {
                     config::BOT_SESSION_EXPIERY
                 } else {
@@ -706,7 +682,7 @@ impl UserMutationRoot {
         let user = user!(ctx);
 
         if let Some(user_id) = loc.split('/').next() {
-            if user_id == user.id.as_ref() || user.admin {
+            if user_id == &user.id.to_string() || user.admin {
                 File { loc }.delete(&state.op).await.extend_err(|_, _| {})?;
             }
         }

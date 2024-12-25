@@ -20,7 +20,7 @@ use opendal::Operator;
 use rustis::client::Client;
 use rusty_paseto::generic::{Local, PasetoSymmetricKey, V4};
 use state::Auth;
-use surrealdb::{engine::remote::ws::Ws, opt::auth::Database, Surreal};
+use surrealdb::{engine::remote::ws::Ws, opt::auth::Root, Surreal};
 use tokio::net::TcpListener;
 use tower_cookies::{CookieManagerLayer, Cookies, Key};
 use tower_http::cors::CorsLayer;
@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     spec = spec
         .set_meta_info(Some(CliSpecMetaInfo {
             version: Some("0.1.0".into()),
-            description: Some("A sumple forum backend".into()),
+            description: Some("A simple forum backend".into()),
             project: Some("rtwalk".into()),
             help_post_text: None,
             author: None,
@@ -89,21 +89,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
     let pubsub_redis = Client::connect(env::var("REDIS_URL").expect("REDIS_URL")).await?;
+
     let surreal_client = Surreal::new::<Ws>(env::var("DB_URL").expect("DB_URL")).await?;
 
     surreal_client
-        .signin(Database {
+        .signin(Root {
             username: "root",
             password: "root",
-            namespace: "dev",
-            database: "rtwalk",
         })
         .await?;
 
+    surreal_client.use_ns("dev").use_db("rtwalk").await?;
+
     let cookies_key = env::var("COOKIE_KEY").expect("COOKIE_KEY");
 
-    let mut opendal_service_builder = opendal::services::Fs::default();
-    opendal_service_builder.root("data/");
+    let opendal_service_builder = opendal::services::Fs::default().root("data/");
 
     let schema = Schema::build(
         MergedQueryRoot::default(),

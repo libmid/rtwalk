@@ -1,10 +1,10 @@
-- [x] Create user account*
+- [x] Create user account
 - [x] Login
 - [x] Logout
 - [x] All session logout
 - [x] Create bot account
 - [x] Login as bot
-- [x] Reset password*
+- [x] Reset password
 - [x] Reset bot token
 - [x] Logout bot from user account
 - [ ] Change email
@@ -36,36 +36,36 @@
 
 ---
 
-- [ ] Fetch single forum
-- [ ] Fetch multiple forums
+- [x] Fetch single forum
+- [x] Fetch multiple forums
 - [ ] Fetch moderators
-- [ ] Forum search
+- [x] Forum search
 
 ---
 
-- [ ] Create post
-- [ ] Edit post
+- [x] Create post
+- [ ] Edit post*
 - [ ] Delete post
 - [ ] Upvote post
 - [ ] Downvote post
 
 ---
 
-- [ ] Fetch single post
-- [ ] Fetch multiple posts
-- [ ] Search posts
+- [ ] Fetch single post**
+- [ ] Fetch multiple posts**
+- [ ] Search posts**
 - [ ] Event dispatch endpoint
 
 ---
 
-- [ ] Create comment
-- [ ] Edit comment
+- [ ] Create comment*
+- [ ] Edit comment*
 - [ ] Delete comment
 
 ---
 
-- [ ] Fetch single comment
-- [ ] Fetch multiple comments
+- [ ] Fetch single comment**
+- [ ] Fetch multiple comments**
 - [ ] Search comments
 - [ ] Event dispatch endpoint
 
@@ -77,4 +77,4 @@
 
 ---
 
-\*sending email not implemented
+* Priority

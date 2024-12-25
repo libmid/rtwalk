@@ -1,65 +1,58 @@
-use std::borrow::Cow;
-
 use async_graphql::SimpleObject;
+use chrono::{DateTime, Utc};
 use cuid2::cuid;
 use serde::{Deserialize, Serialize};
-use surrealdb::sql::{Datetime, Thing};
+use surrealdb::RecordId;
 
-use super::{file::File, Id};
+use super::{file::File, Key};
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DBForum<'a> {
-    pub id: Thing,
-    pub owner: Thing,
-    pub name: Cow<'a, str>,
-    pub display_name: Cow<'a, str>,
-    pub description: Option<Cow<'a, str>>,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DBForum {
+    pub id: RecordId,
+    pub owner: RecordId,
+    pub name: String,
+    pub display_name: String,
+    pub description: Option<String>,
     pub icon: Option<File>,
     pub banner: Option<File>,
-    pub created_at: Datetime,
+    pub created_at: DateTime<Utc>,
     pub locked: bool,
 }
 
-impl<'a> DBForum<'a> {
-    pub fn new(name: &Cow<'a, str>, owner: Id) -> Self {
+impl DBForum {
+    pub fn new(name: &str, owner: Key) -> Self {
         Self {
-            id: Thing {
-                tb: "forum".into(),
-                id: cuid().into(),
-            },
-            owner: Thing {
-                tb: "user".into(),
-                id: owner.0,
-            },
-            name: name.clone(),
-            display_name: name.clone(),
+            id: RecordId::from_table_key("forum", cuid()),
+            owner: RecordId::from_table_key("user", owner.0),
+            name: name.to_string(),
+            display_name: name.to_string(),
             description: None,
             icon: None,
             banner: None,
-            created_at: Datetime::default(),
+            created_at: DateTime::default(),
             locked: false,
         }
     }
 }
 
 #[derive(SimpleObject, Debug)]
-pub struct Forum<'a> {
-    pub id: Id,
-    pub owner_id: Id,
-    pub name: Cow<'a, str>,
-    pub display_name: Cow<'a, str>,
-    pub description: Option<Cow<'a, str>>,
+pub struct Forum {
+    pub id: Key,
+    pub owner_id: Key,
+    pub name: String,
+    pub display_name: String,
+    pub description: Option<String>,
     pub icon: Option<File>,
     pub banner: Option<File>,
     pub created_at: i64,
     pub locked: bool,
 }
 
-impl<'a> From<DBForum<'a>> for Forum<'a> {
-    fn from(value: DBForum<'a>) -> Self {
+impl From<DBForum> for Forum {
+    fn from(value: DBForum) -> Self {
         Self {
-            id: Id(value.id.id),
-            owner_id: Id(value.owner.id),
+            id: Key(value.id.key().to_owned()),
+            owner_id: Key(value.owner.key().to_owned()),
             name: value.name,
             display_name: value.display_name,
             description: value.description,

@@ -1,6 +1,4 @@
-use std::borrow::Cow;
-
-use async_graphql::{Context, MaybeUndefined, Object, ResultExt, Upload};
+use async_graphql::{Context, MaybeUndefined, Object, OneofObject, ResultExt, Upload};
 use cuid2::cuid;
 
 use crate::{
@@ -11,7 +9,7 @@ use crate::{
         file::{File, FileOps},
         forum::{DBForum, Forum},
         user::DBUser,
-        Id,
+        Key,
     },
 };
 
@@ -32,25 +30,25 @@ impl ForumMutationRoot {
         let user = user!(ctx);
         let state = state!(ctx);
 
-        let user = forums::create_forum(&state, &name.into(), user.id)
+        let forum = forums::create_forum(&state, name.into(), user.id)
             .await
             .extend_err(|_, _| {})?;
 
-        Ok(user.into())
+        Ok(forum.into())
     }
 
     #[graphql(guard = Role::Human)]
     async fn update_forum<'r>(
         &self,
         ctx: &Context<'r>,
-        forum_id: Id,
+        forum_id: Key,
         #[graphql(validator(min_length = 3, max_length = 20, regex = r"^[a-z0-9_]+$"))]
         name: Option<String>,
         display_name: Option<String>,
         description: MaybeUndefined<String>,
         icon: MaybeUndefined<Upload>,
         banner: MaybeUndefined<Upload>,
-    ) -> async_graphql::Result<Forum<'r>> {
+    ) -> async_graphql::Result<Forum> {
         let state = state!(ctx);
         let user = user!(ctx);
 
@@ -62,17 +60,17 @@ impl ForumMutationRoot {
 
         if let Some(mut forum) = forum {
             if let Some(name) = name {
-                forum.name = Cow::from(name);
+                forum.name = name;
             }
 
             if let Some(display_name) = display_name {
-                forum.display_name = Cow::from(display_name);
+                forum.display_name = display_name;
             }
 
             if description.is_null() {
                 forum.description = None;
             } else if let MaybeUndefined::Value(description) = description {
-                forum.description = Some(Cow::from(description));
+                forum.description = Some(description);
             }
 
             if icon.is_null() {
@@ -130,15 +128,48 @@ impl ForumMutationRoot {
     async fn add_moderator<'r>(
         &self,
         ctx: &Context<'r>,
-        forum_id: Id,
-        mod_id: Id,
+        forum_id: Key,
+        mod_id: Key,
     ) -> async_graphql::Result<String> {
         let state = state!(ctx);
         let user = user!(ctx);
 
-
-        let new_mod: Option<DBUser> = state.db.select(("forum", mod_id.0)).await?;
+        let forum: Option<DBForum> = state.db.select(("forum", forum_id.0)).await?;
+        let new_mod: Option<DBUser> = state.db.select(("user", mod_id.0)).await?;
 
         todo!()
+    }
+}
+
+#[derive(Default)]
+pub struct ForumQueryRoot;
+
+#[derive(OneofObject)]
+pub enum ForumSelectCriteria {
+    Id(String),
+    Name(String),
+}
+
+#[derive(OneofObject)]
+pub enum MultipleForumSelectCriteria {
+    Ids(Vec<String>),
+    Names(Vec<String>),
+    Search(String),
+}
+
+#[Object]
+impl ForumQueryRoot {
+    async fn forum<'r>(
+        &self,
+        ctx: &Context<'r>,
+        criteria: ForumSelectCriteria,
+    ) -> async_graphql::Result<Option<Forum>> {
+        let state = state!(ctx);
+
+        let forum = forums::fetch_forum(state, criteria)
+            .await
+            .extend_err(|_, _| {})?;
+
+        Ok(forum.map(|x| x.into()))
     }
 }

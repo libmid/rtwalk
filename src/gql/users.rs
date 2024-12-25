@@ -1,8 +1,9 @@
 use std::env;
+use std::ops::Deref;
 
 use crate::config;
 use crate::models::user::User;
-use crate::models::Id;
+use crate::models::Key;
 use crate::template::EmailVerify;
 use crate::{
     error::RtwalkError,
@@ -15,6 +16,7 @@ use argon2::{
     Argon2,
 };
 use async_graphql::CustomValidator;
+use chrono::DateTime;
 use cuid2::cuid;
 use lettre::message::header::ContentType;
 use lettre::transport::smtp::authentication::Credentials;
@@ -27,8 +29,8 @@ use rustis::{
     commands::{SetCondition, SetExpiration, StringCommands},
 };
 use rusty_paseto::prelude::*;
-use sailfish::TemplateOnce;
-use surrealdb::sql::{Datetime, Thing};
+use sailfish::TemplateSimple;
+use surrealdb::RecordId;
 use zxcvbn::zxcvbn;
 
 use super::resolvers::users::{MultipleUserSelectCriteria, UserSelectCriteria};
@@ -41,11 +43,8 @@ impl<'a> CustomValidator<String> for PasswordValidator<'a> {
         &self,
         value: &String,
     ) -> std::result::Result<(), async_graphql::InputValueError<String>> {
-        let entropy = zxcvbn(value, &[self.0, self.1]).map_err(|err| {
-            // NOTE: Maybe make this a part of the error mod?
-            async_graphql::InputValueError::from(err).with_extension("tp", "INVALID_PASSWORD")
-        })?;
-        if entropy.score() < config::MIN_PASSWORD_SCORE {
+        let entropy = zxcvbn(value, &[self.0, self.1]);
+        if std::convert::Into::<u8>::into(entropy.score()) < config::MIN_PASSWORD_SCORE {
             // NOTE: Same as above
             return Err(async_graphql::InputValueError::from(format!(
                 "Password too weak [{}/{}]",
@@ -70,8 +69,8 @@ pub async fn push_pending(
         .db
         .query("SELECT 1 FROM user WHERE username = $username")
         .query("SELECT 1 FROM user_secret WHERE email = $email")
-        .bind(("username", &username))
-        .bind(("email", &email))
+        .bind(("username", username.clone()))
+        .bind(("email", email.clone()))
         .await?;
     let username_exists: Option<u64> = exists.take((0, "1"))?;
     if username_exists.is_some() {
@@ -144,7 +143,7 @@ pub async fn push_pending(
 
     // TODO: Actually send the mail, just printing for now
     // WARNING: Dont forget this ^
-    dbg!("Email verification code", code);
+    dbg!(code);
     // Construct user and secret.
     let (pending_user_key, tries_remaining_key, secret_key, verification_code_key) = (
         format!("pending:{}", &username),
@@ -152,12 +151,9 @@ pub async fn push_pending(
         format!("pending_secret:{}", &username),
         format!("verification_code:{}", &username),
     );
-    let user = DBUser::new(username.into(), false, None);
+    let user = DBUser::new(username.deref().into(), false, None);
     let secret = DBUserSecret {
-        user: Thing {
-            tb: "user".into(),
-            id: user.id.clone().into(),
-        },
+        user: user.id.clone(),
         email: email.into(),
         password: password_hash.into(),
         banned: false,
@@ -301,32 +297,32 @@ pub async fn verify_user(
     Err(RtwalkError::VerificationCodeExpired)
 }
 
-async fn create_user<'r>(
+async fn create_user(
     state: &State,
-    user: DBUser<'r>,
-    secret: DBUserSecret<'r>,
-) -> Result<DBUser<'r>, RtwalkError> {
+    user: DBUser,
+    secret: DBUserSecret,
+) -> Result<DBUser, RtwalkError> {
     state
         .db
         .query("BEGIN TRANSACTION")
         .query("CREATE user CONTENT $user")
         .query("CREATE user_secret CONTENT $secret")
         .query("COMMIT TRANSACTION")
-        .bind(("user", &user))
-        .bind(("secret", &secret))
+        .bind(("user", user.clone()))
+        .bind(("secret", secret))
         .await?;
     Ok(user)
 }
 
 pub async fn create_bot(
     state: &State,
-    owner_id: Id,
+    owner_id: Key,
     username: String,
 ) -> Result<(String, DBUser), RtwalkError> {
     let mut exists = state
         .db
         .query("SELECT 1 FROM user WHERE username = $username")
-        .bind(("username", &username))
+        .bind(("username", username.clone()))
         .await?;
     let username_exists: Option<u64> = exists.take((0, "1"))?;
     if username_exists.is_some() {
@@ -357,16 +353,10 @@ pub async fn create_bot(
     let bot = DBUser::new(
         username.into(),
         true,
-        Some(Thing {
-            tb: "user".into(),
-            id: owner_id.0,
-        }),
+        Some(RecordId::from_table_key("user", owner_id.0)),
     );
     let secret = DBUserSecret {
-        user: Thing {
-            tb: "user".into(),
-            id: bot.id.clone().into(),
-        },
+        user: bot.id.clone(),
         email: email.into(),
         password: password_hash.into(),
         banned: false,
@@ -387,7 +377,7 @@ pub async fn login_user(
     let mut res = state
         .db
         .query("SELECT password, banned, user.* AS user FROM user_secret WHERE email = $email")
-        .bind(("email", &email))
+        .bind(("email", email.clone()))
         .await?;
     let password_hash: Option<String> = res.take((0, "password"))?;
     if let Some(password_hash) = password_hash {
@@ -424,27 +414,21 @@ pub async fn login_user(
     return Err(RtwalkError::InvalidCredentials);
 }
 
-pub async fn verify_bot_belongs_to_user<'r>(
+pub async fn verify_bot_belongs_to_user(
     state: &State,
-    user_id: &Id,
-    bot_id: &Id,
-) -> Result<DBUser<'r>, RtwalkError> {
+    user_id: &Key,
+    bot_id: &Key,
+) -> Result<DBUser, RtwalkError> {
     let mut bot = state
         .db
         .query("SELECT * FROM user WHERE id = $id")
-        .bind((
-            "id",
-            Thing {
-                tb: "user".into(),
-                id: bot_id.0.clone(),
-            },
-        ))
+        .bind(("id", RecordId::from_table_key("user", bot_id.0.clone())))
         .await?;
     let bot: Option<DBUser> = bot.take(0)?;
 
     if let Some(bot) = bot {
         if let Some(ref owner) = bot.owner {
-            if owner.id == user_id.0 {
+            if owner.key() == &user_id.0 {
                 return Ok(bot);
             }
         }
@@ -452,7 +436,7 @@ pub async fn verify_bot_belongs_to_user<'r>(
     Err(RtwalkError::UnauhorizedRequest)
 }
 
-pub async fn reset_bot_password(state: &State, bot_id: &Id) -> Result<String, RtwalkError> {
+pub async fn reset_bot_password(state: &State, bot_id: &Key) -> Result<String, RtwalkError> {
     let password = cuid();
 
     let creds = format!("@{}", &password);
@@ -472,13 +456,7 @@ pub async fn reset_bot_password(state: &State, bot_id: &Id) -> Result<String, Rt
         .db
         .query("UPDATE user_secret SET password = $password_hash WHERE user = $user RETURN email")
         .bind(("password_hash", password_hash))
-        .bind((
-            "user",
-            Thing {
-                tb: "user".into(),
-                id: bot_id.0.clone(),
-            },
-        ))
+        .bind(("user", RecordId::from_table_key("user", bot_id.0.clone())))
         .await?;
 
     let mut email =
@@ -496,7 +474,7 @@ pub async fn reset_password(state: &State, email: &str) -> Result<(), RtwalkErro
     let mut res = state
         .db
         .query("SELECT password, user.bot as bot FROM user_secret WHERE email = $email")
-        .bind(("email", email))
+        .bind(("email", email.to_string()))
         .await?;
     let password_hash: Option<String> = res.take((0, "password"))?;
     let bot: Option<bool> = res.take((0, "bot"))?;
@@ -531,14 +509,14 @@ pub async fn set_new_password(
         .map_err(|_| RtwalkError::InvalidPasswordResetToken)?;
 
     let password_hash = data["password_hash"].to_string();
-    let password_hash = &password_hash[1..password_hash.len() - 1];
+    let password_hash = password_hash[1..password_hash.len() - 1].to_string();
     let email = data["email"].to_string();
-    let email = &email[1..email.len() - 1];
+    let email = email[1..email.len() - 1].to_string();
     let mut res = state
         .db
         .query("SELECT 1 FROM user_secret WHERE password = $password_hash AND email = $email")
         .bind(("password_hash", password_hash))
-        .bind(("email", email))
+        .bind(("email", email.clone()))
         .await?;
     let exists: Option<u64> = res.take((0, "1"))?;
     if exists.is_some() {
@@ -564,18 +542,15 @@ pub async fn set_new_password(
     Err(RtwalkError::InvalidPasswordResetToken)
 }
 
-pub async fn update_user<'r1, 'r2>(
-    state: &State,
-    updated_user: User<'r1>,
-) -> Result<DBUser<'r2>, RtwalkError> {
+pub async fn update_user(state: &State, updated_user: User) -> Result<DBUser, RtwalkError> {
     let mut db_user: DBUser = updated_user.into();
-    db_user.modified_at = Datetime::default();
+    db_user.modified_at = DateTime::default();
 
     let mut exists = state
         .db
         .query("SELECT 1 FROM user WHERE username = $username AND id != $id")
-        .bind(("username", &db_user.username))
-        .bind(("id", &db_user.id))
+        .bind(("username", db_user.username.clone()))
+        .bind(("id", db_user.id.clone()))
         .await?;
     let username_exists: Option<u64> = exists.take((0, "1"))?;
     if username_exists.is_some() {
@@ -607,11 +582,11 @@ pub async fn fetch_user(
     Ok(user)
 }
 
-pub async fn fetch_users<'r>(
+pub async fn fetch_users(
     state: &State,
     criteria: MultipleUserSelectCriteria,
     page_info: &PageInfo,
-) -> Result<Vec<DBUser<'r>>, RtwalkError> {
+) -> Result<Vec<DBUser>, RtwalkError> {
     let user: Vec<DBUser> = match criteria {
         MultipleUserSelectCriteria::Ids(ids) => {
             let mut query = state
@@ -626,10 +601,7 @@ pub async fn fetch_users<'r>(
                 .bind((
                     "ids",
                     ids.into_iter()
-                        .map(|x| Thing {
-                            tb: "user".into(),
-                            id: x.into(),
-                        })
+                        .map(|x| RecordId::from_table_key("user", x))
                         .collect::<Vec<_>>(),
                 ))
                 .bind(("limit", page_info.per_page))

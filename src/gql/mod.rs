@@ -12,6 +12,7 @@ use rustis::commands::StringCommands;
 pub mod forums;
 pub mod resolvers;
 pub mod users;
+pub mod posts;
 
 macro_rules! state {
     ($ctx: expr) => {{
@@ -179,11 +180,16 @@ impl QueryRoot {
 
 #[derive(MergedObject, Default)]
 #[graphql(name = "Query")]
-pub struct MergedQueryRoot(QueryRoot, resolvers::users::UserQueryRoot);
+pub struct MergedQueryRoot(
+    QueryRoot,
+    resolvers::users::UserQueryRoot,
+    resolvers::forums::ForumQueryRoot,
+);
 
 #[derive(MergedObject, Default)]
 #[graphql(name = "Mutation")]
 pub struct MergedMutationRoot(
     resolvers::users::UserMutationRoot,
     resolvers::forums::ForumMutationRoot,
+    resolvers::posts::PostMutationRoot,
 );

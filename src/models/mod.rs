@@ -2,48 +2,41 @@ use std::ops::Deref;
 
 use async_graphql::*;
 use serde::{Deserialize, Serialize};
+use surrealdb::RecordIdKey;
 
 pub mod file;
+pub mod post;
 pub mod forum;
 pub mod user;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
-pub struct Id(pub surrealdb::sql::Id);
+pub struct Key(pub RecordIdKey);
 
-impl Deref for Id {
-    type Target = surrealdb::sql::Id;
+impl Deref for Key {
+    type Target = RecordIdKey;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl ToString for Id {
+impl ToString for Key {
     fn to_string(&self) -> String {
-        self.0.to_raw()
+        self.0.to_string()
     }
 }
 
-impl AsRef<str> for Id {
-    fn as_ref(&self) -> &str {
-        match &self.0 {
-            surrealdb::sql::Id::String(s) => &s,
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl From<String> for Id {
+impl From<String> for Key {
     fn from(value: String) -> Self {
-        Self(surrealdb::sql::Id::from(value))
+        Self(RecordIdKey::from(value))
     }
 }
 
 #[Scalar]
-impl ScalarType for Id {
+impl ScalarType for Key {
     fn parse(value: Value) -> InputValueResult<Self> {
         if let Value::String(value) = value {
-            Ok(Id(value.parse::<String>()?.into()))
+            Ok(Key(value.parse::<String>()?.into()))
         } else {
             Err(InputValueError::expected_type(value))
         }

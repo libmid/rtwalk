@@ -1,35 +1,31 @@
-use std::borrow::Cow;
-
-use super::{file::File, Id};
+use super::{file::File, Key};
 use async_graphql::SimpleObject;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use surrealdb::sql::{Datetime, Thing};
+use surrealdb::RecordId;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct DBUser<'a> {
-    pub id: Thing,
-    pub username: Cow<'a, str>,
-    pub display_name: Cow<'a, str>,
-    pub bio: Option<Cow<'a, str>>,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DBUser {
+    pub id: RecordId,
+    pub username: String,
+    pub display_name: String,
+    pub bio: Option<String>,
     pub pfp: Option<File>,
     pub banner: Option<File>,
-    pub created_at: Datetime,
-    pub modified_at: Datetime,
+    pub created_at: DateTime<Utc>,
+    pub modified_at: DateTime<Utc>,
     pub admin: bool,
     pub bot: bool,
-    pub owner: Option<Thing>,
+    pub owner: Option<RecordId>,
 }
 
-impl<'a> DBUser<'a> {
+impl DBUser {
     /// Creates a new [`DBUser`].
-    pub fn new(username: Cow<'a, str>, bot: bool, owner: Option<Thing>) -> Self {
-        let created_at = Datetime::default();
+    pub fn new(username: String, bot: bool, owner: Option<RecordId>) -> Self {
+        let created_at = DateTime::default();
         let modified_at = created_at.clone();
         DBUser {
-            id: Thing {
-                tb: "user".into(),
-                id: cuid2::cuid().into(),
-            },
+            id: RecordId::from(("user".to_owned(), cuid2::cuid())),
             username: username.clone(),
             display_name: username.clone(),
             bio: None,
@@ -45,33 +41,33 @@ impl<'a> DBUser<'a> {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct DBUserSecret<'a> {
-    pub user: Thing,
-    pub email: Cow<'a, str>,
-    pub password: Cow<'a, str>,
+pub struct DBUserSecret {
+    pub user: RecordId,
+    pub email: String,
+    pub password: String,
     pub banned: bool,
 }
 
 #[derive(SimpleObject, Serialize, Deserialize, Debug)]
 #[graphql(complex)]
-pub struct User<'a> {
-    pub id: Id,
-    pub username: Cow<'a, str>,
-    pub display_name: Cow<'a, str>,
-    pub bio: Option<Cow<'a, str>>,
+pub struct User {
+    pub id: Key,
+    pub username: String,
+    pub display_name: String,
+    pub bio: Option<String>,
     pub pfp: Option<File>,
     pub banner: Option<File>,
     pub created_at: i64,
     pub modified_at: i64,
     pub admin: bool,
     pub bot: bool,
-    pub owner: Option<Id>,
+    pub owner: Option<Key>,
 }
 
-impl<'r> From<DBUser<'r>> for User<'r> {
-    fn from(value: DBUser<'r>) -> Self {
+impl From<DBUser> for User {
+    fn from(value: DBUser) -> Self {
         Self {
-            id: Id(value.id.id),
+            id: Key(value.id.key().to_owned()),
             username: value.username,
             display_name: value.display_name,
             bio: value.bio,
@@ -81,18 +77,15 @@ impl<'r> From<DBUser<'r>> for User<'r> {
             modified_at: value.modified_at.timestamp(),
             admin: value.admin,
             bot: value.bot,
-            owner: value.owner.map(|i| Id(i.id)),
+            owner: value.owner.map(|i| Key(i.key().to_owned())),
         }
     }
 }
 
-impl<'a> From<User<'a>> for DBUser<'a> {
-    fn from(value: User<'a>) -> Self {
+impl From<User> for DBUser {
+    fn from(value: User) -> Self {
         Self {
-            id: Thing {
-                tb: "user".into(),
-                id: value.id.0,
-            },
+            id: RecordId::from_table_key("user", value.id.0),
             username: value.username,
             display_name: value.display_name,
             bio: value.bio,
@@ -106,17 +99,7 @@ impl<'a> From<User<'a>> for DBUser<'a> {
                 .into(),
             admin: value.admin,
             bot: value.bot,
-            owner: value.owner.map(|i| Thing {
-                tb: "user".into(),
-                id: i.0,
-            }),
+            owner: value.owner.map(|i| RecordId::from_table_key("user", i.0)),
         }
     }
 }
-
-// impl<'r1, 'r2> ToOwned for User<'r1> {
-//     type Owned = User<'r2>;
-//     fn to_owned(&self) -> Self::Owned {
-//         User {}
-//     }
-// }
