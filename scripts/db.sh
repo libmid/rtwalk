@@ -1,4 +1,7 @@
 curl -X POST -u "root:root" -H "NS: dev" -H "DB: rtwalk" -H "Accept: application/json" -d "DEFINE ANALYZER english_analyzer TOKENIZERS blank FILTERS lowercase, snowball(english);" http://localhost:8000/sql
+
 curl -X POST -u "root:root" -H "NS: dev" -H "DB: rtwalk" -H "Accept: application/json" -d "DEFINE INDEX user_username_index ON user FIELDS username SEARCH ANALYZER english_analyzer BM25;" http://localhost:8000/sql
+
 curl -X POST -u "root:root" -H "NS: dev" -H "DB: rtwalk" -H "Accept: application/json" -d "DEFINE INDEX user_display_name_index ON user FIELDS display_name SEARCH ANALYZER english_analyzer BM25;" http://localhost:8000/sql
+
 curl -X POST -u "root:root" -H "NS: dev" -H "DB: rtwalk" -H "Accept: application/json" -d "DEFINE INDEX user_bio_index ON user FIELDS bio SEARCH ANALYZER english_analyzer BM25;" http://localhost:8000/sql

@@ -8,7 +8,6 @@ use crate::{
     models::{
         file::{File, FileOps},
         forum::{DBForum, Forum},
-        user::DBUser,
         Key,
     },
 };
@@ -52,13 +51,13 @@ impl ForumMutationRoot {
         let state = state!(ctx);
         let user = user!(ctx);
 
-        if user.id != forum_id {
-            return Err(RtwalkError::UnauhorizedRequest).extend_err(|_, _| {});
-        }
-
         let forum: Option<DBForum> = state.db.select(("forum", forum_id.0)).await?;
 
         if let Some(mut forum) = forum {
+            if &user.id.0 != forum.owner.key() {
+                return Err(RtwalkError::UnauhorizedRequest).extend_err(|_, _| {});
+            }
+
             if let Some(name) = name {
                 forum.name = name;
             }
@@ -118,27 +117,28 @@ impl ForumMutationRoot {
             }
 
             let res: Option<DBForum> = state.db.update(&forum.id).content(forum).await?;
+
             Ok(res.expect("Forum exists").into())
         } else {
             Err(RtwalkError::ForumNotFound).extend_err(|_, _| {})
         }
     }
 
-    #[graphql(guard = Role::Human)]
-    async fn add_moderator<'r>(
-        &self,
-        ctx: &Context<'r>,
-        forum_id: Key,
-        mod_id: Key,
-    ) -> async_graphql::Result<String> {
-        let state = state!(ctx);
-        let user = user!(ctx);
+    // #[graphql(guard = Role::Human)]
+    // async fn add_moderator<'r>(
+    //     &self,
+    //     ctx: &Context<'r>,
+    //     forum_id: Key,
+    //     mod_id: Key,
+    // ) -> async_graphql::Result<String> {
+    //     let state = state!(ctx);
+    //     let user = user!(ctx);
 
-        let forum: Option<DBForum> = state.db.select(("forum", forum_id.0)).await?;
-        let new_mod: Option<DBUser> = state.db.select(("user", mod_id.0)).await?;
+    //     let forum: Option<DBForum> = state.db.select(("forum", forum_id.0)).await?;
+    //     let new_mod: Option<DBUser> = state.db.select(("user", mod_id.0)).await?;
 
-        todo!()
-    }
+    //     todo!()
+    // }
 }
 
 #[derive(Default)]

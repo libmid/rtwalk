@@ -39,23 +39,23 @@
 - [x] Fetch single forum
 - [x] Fetch multiple forums
 - [ ] Fetch moderators
-- [x] Forum search
+- [ ] Forum search
 
 ---
 
 - [x] Create post
-- [ ] Edit post*
+- [x] Edit post
 - [ ] Delete post
 - [ ] Upvote post
 - [ ] Downvote post
 
 ---
 
-- [ ] Fetch single post**
-- [ ] Fetch multiple posts**
-- [ ] Search posts**
-- [ ] Event dispatch endpoint
-
+- [x] Fetch single post
+- [x] Fetch multiple posts#
+- [x] Search posts
+- [x] Post create event
+- [x] Post edit event
 ---
 
 - [ ] Create comment*
@@ -64,7 +64,6 @@
 
 ---
 
-- [ ] Fetch single comment**
 - [ ] Fetch multiple comments**
 - [ ] Search comments
 - [ ] Event dispatch endpoint
@@ -78,3 +77,4 @@
 ---
 
 * Priority
+# TODO

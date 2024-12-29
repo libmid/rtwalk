@@ -48,7 +48,7 @@ impl DBPost {
     }
 }
 
-#[derive(SimpleObject, Debug)]
+#[derive(SimpleObject, Debug, Serialize, Deserialize, Clone)]
 pub struct Post {
     pub id: Key,
     pub poster_id: Key,

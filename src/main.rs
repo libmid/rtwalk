@@ -2,8 +2,8 @@ use std::{env, error::Error, sync::Arc};
 
 use crate::gql::ApiInfo;
 
-use async_graphql::{http::GraphiQLSource, EmptySubscription, Schema};
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
+use async_graphql::{http::GraphiQLSource, Schema};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use axum::{
     http::{header::CONTENT_TYPE, Method},
     response::{Html, IntoResponse},
@@ -15,7 +15,7 @@ use cliparser::{
     types::{Argument, ArgumentOccurrence, ArgumentValueType, CliSpec, CliSpecMetaInfo},
 };
 use dotenvy::dotenv;
-use gql::{MergedMutationRoot, MergedQueryRoot};
+use gql::{MergedMutationRoot, MergedQueryRoot, Subscription};
 use opendal::Operator;
 use rustis::client::Client;
 use rusty_paseto::generic::{Local, PasetoSymmetricKey, V4};
@@ -38,12 +38,13 @@ async fn graphiql() -> impl IntoResponse {
         GraphiQLSource::build()
             .credentials(async_graphql::http::Credentials::Include)
             .endpoint("/")
+            .subscription_endpoint("/ws")
             .finish(),
     )
 }
 
 async fn gql(
-    schema: Extension<Schema<MergedQueryRoot, MergedMutationRoot, EmptySubscription>>,
+    schema: Extension<Schema<MergedQueryRoot, MergedMutationRoot, Subscription>>,
     cookies: Cookies,
     request: GraphQLRequest,
 ) -> GraphQLResponse {
@@ -108,7 +109,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let schema = Schema::build(
         MergedQueryRoot::default(),
         MergedMutationRoot::default(),
-        EmptySubscription,
+        Subscription,
     )
     .data(state::State {
         inner: Arc::new(state::InnerState {
@@ -117,7 +118,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 major: 0,
                 minor: 1,
                 bugfix: 0,
-                rte: "ws://localhost:4001/rte",
+                rte: "ws://localhost:4001/ws",
                 vc: "ws://localhost:4002/ws",
             },
             redis,
@@ -129,10 +130,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 cookies_key[..32].as_bytes(),
             )),
         }),
-    });
+    }).finish();
 
     let app = Router::new()
         .route("/", get(graphiql).post(gql))
+        .route_service("/ws", GraphQLSubscription::new(schema.clone()))
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
@@ -144,7 +146,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .allow_headers([CONTENT_TYPE]),
         )
         .layer(CookieManagerLayer::new())
-        .layer(Extension(schema.finish()));
+        .layer(Extension(schema));
 
     let port = &res.argument_values.get("port").unwrap()[0];
     let host = &res.argument_values.get("host").unwrap()[0];

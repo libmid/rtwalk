@@ -2,17 +2,23 @@ use std::sync::atomic::{AtomicBool, AtomicU32};
 
 use crate::{
     error::{Result, RtwalkError},
+    models::RtEvent,
     state::Auth,
 };
 use async_graphql::{
     scalar, Context, ErrorExtensions, Guard, MergedObject, Object, ResultExt, SimpleObject,
+    Subscription,
 };
-use rustis::commands::StringCommands;
+use async_stream::stream;
+use bytes::Buf;
+use futures::{Stream, StreamExt};
+use rustis::commands::{PubSubCommands, StringCommands};
+use serde_json;
 
 pub mod forums;
+pub mod posts;
 pub mod resolvers;
 pub mod users;
-pub mod posts;
 
 macro_rules! state {
     ($ctx: expr) => {{
@@ -174,6 +180,46 @@ impl QueryRoot {
                 needs_page_info,
                 ..Default::default()
             },
+        })
+    }
+}
+
+pub struct Subscription;
+
+#[Subscription]
+impl Subscription {
+    async fn rte(
+        &self,
+        ctx: &Context<'_>,
+        post_create: bool,
+        post_update: bool,
+    ) -> async_graphql::Result<impl Stream<Item = RtEvent>> {
+        let state = state!(ctx);
+
+        let mut channels = vec![];
+        if post_create {
+            channels.push("rte-post-create");
+        }
+        if post_update {
+            channels.push("rte-post-update");
+        }
+
+        let mut sub_stream = state
+            .pubsub
+            .ssubscribe(channels)
+            .await
+            .map_err(|e| RtwalkError::RedisError(e))
+            .extend_err(|_, _| {})?;
+
+        Ok(stream! {
+            while let Some(maybe_sub_msg) = sub_stream.next().await {
+                if let Ok(sub_msg) = maybe_sub_msg {
+                    let event: RtEvent = serde_json::from_reader(sub_msg.payload.reader()).expect("Payload must be valid");
+
+                    yield event;
+                }
+                // TODO: Handle this error
+            }
         })
     }
 }
