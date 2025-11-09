@@ -56,7 +56,7 @@ async fn gql(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let _ = dotenv();
+    dotenv().unwrap();
     tracing_subscriber::fmt::init();
     let mut spec = CliSpec::new();
 
@@ -130,7 +130,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 cookies_key[..32].as_bytes(),
             )),
         }),
-    }).finish();
+    })
+    .finish();
 
     let app = Router::new()
         .route("/", get(graphiql).post(gql))
@@ -140,7 +141,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
                 .allow_origin([
                     "https://dreamh.net".parse().unwrap(),
-                    "http://localhost:5173".parse().unwrap(),
+                    "http://localhost:3001".parse().unwrap(),
+                    "http://localhost:3000".parse().unwrap(),
                 ])
                 .allow_credentials(true)
                 .allow_headers([CONTENT_TYPE]),

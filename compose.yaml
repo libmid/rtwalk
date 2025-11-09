@@ -1,0 +1,27 @@
+services:
+    surrealdb:
+        image: surrealdb/surrealdb:latest
+        user: root
+        volumes:
+            - ./rtwalk.db:/rtwalk.db
+        command:
+            - start
+            - --user=$DB_USER
+            - --pass=$DB_PASSWORD
+            - rocksdb:/rtwalk.db
+        ports:
+            - "4003:8000"
+
+    redis:
+        image: redis:latest
+        ports:
+            - "4004:6379"
+
+    rtwalk:
+        build: .
+        ports:
+            - "4001:4001"
+        env_file: .env
+        depends_on:
+            - surrealdb
+            - redis

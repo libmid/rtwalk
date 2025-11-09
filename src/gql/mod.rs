@@ -15,6 +15,7 @@ use futures::{Stream, StreamExt};
 use rustis::commands::{PubSubCommands, StringCommands};
 use serde_json;
 
+pub mod comments;
 pub mod forums;
 pub mod posts;
 pub mod resolvers;
@@ -98,7 +99,7 @@ impl Guard for Role {
                     Self::Bot => user.bot,
                     Self::Human => !user.bot,
                     Self::Authenticated => true,
-                    Self::UnAuthenticated => unreachable!(),
+                    Self::UnAuthenticated => false,
                 };
                 if permitted {
                     *ctx.data_unchecked::<Auth>().0.lock().unwrap() = Some(user);
@@ -162,10 +163,12 @@ impl QueryRoot {
             if field.name() == "Page" {
                 let mut set_count = 0;
                 for set in field.selection_set() {
-                    if set.name() != "pageInfo" {
-                        set_count += 1;
-                    } else {
+                    if set.name() == "pageInfo" {
                         needs_page_info = true;
+                    } else if set.name().contains("typename") {
+                        // Ignore
+                    } else {
+                        set_count += 1;
                     }
                 }
                 if set_count > 1 {
@@ -230,6 +233,7 @@ pub struct MergedQueryRoot(
     QueryRoot,
     resolvers::users::UserQueryRoot,
     resolvers::forums::ForumQueryRoot,
+    resolvers::posts::PostQueryRoot,
 );
 
 #[derive(MergedObject, Default)]
@@ -238,4 +242,5 @@ pub struct MergedMutationRoot(
     resolvers::users::UserMutationRoot,
     resolvers::forums::ForumMutationRoot,
     resolvers::posts::PostMutationRoot,
+    resolvers::comments::CommentMutationRoot,
 );

@@ -46,6 +46,8 @@ pub enum RtwalkError {
     UserNotFound,
     #[error("Post not found")]
     PostNotFound,
+    #[error("Comment not found")]
+    CommentNotFound,
 }
 
 impl ErrorExtensions for RtwalkError {
@@ -115,6 +117,10 @@ impl ErrorExtensions for RtwalkError {
             RtwalkError::PostNotFound => {
                 trace!("{}", self);
                 e.set("tp", "POST_NOT_FOUND");
+            }
+            RtwalkError::CommentNotFound => {
+                trace!("{}", self);
+                e.set("tp", "COMMENT_NOT_FOUND");
             }
         })
     }

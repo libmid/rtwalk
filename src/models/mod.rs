@@ -1,10 +1,12 @@
 use std::ops::Deref;
 
 use async_graphql::*;
+use comment::Comment;
 use post::Post;
 use serde::{Deserialize, Serialize};
 use surrealdb::RecordIdKey;
 
+pub mod comment;
 pub mod file;
 pub mod forum;
 pub mod post;
@@ -59,16 +61,31 @@ pub struct PostEditEvent {
     pub new: Post,
 }
 
+#[derive(SimpleObject, Deserialize, Serialize, Clone)]
+pub struct CommentCreateEvent {
+    pub data: Comment,
+}
+
+#[derive(SimpleObject, Deserialize, Serialize, Clone)]
+pub struct CommentEditEvent {
+    pub original: Comment,
+    pub new: Comment,
+}
+
 #[derive(Union, Deserialize, Serialize, Clone)]
 pub enum RtEventData {
     PostCreate(PostCreateEvent),
     PostEdit(PostEditEvent),
+    CommentCreate(CommentCreateEvent),
+    CommentEdit(CommentEditEvent),
 }
 
 #[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Enum)]
 pub enum RtEventType {
     PostCreate,
     PostEdit,
+    CommentCreate,
+    CommentEdit,
 }
 
 #[derive(SimpleObject, Serialize, Deserialize, Clone)]

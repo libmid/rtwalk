@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use async_graphql::SimpleObject;
 use chrono::{DateTime, Utc};
 use cuid2::cuid;
@@ -30,7 +32,7 @@ impl DBPost {
         poster: Key,
         forum: Key,
     ) -> Self {
-        let created_at = DateTime::default();
+        let created_at: DateTime<Utc> = SystemTime::now().into();
         let edited_at = created_at.clone();
         Self {
             id: RecordId::from_table_key("forum", cuid()),

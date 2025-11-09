@@ -1,15 +1,16 @@
 use crate::{
     error::RtwalkError,
     gql::{
-        forums, posts,
-        resolvers::{forums::MultipleForumSelectCriteria, users::MultipleUserSelectCriteria},
+        comments, forums, posts,
+        resolvers::{
+            comments::MultipleCommentSelectCriteria, forums::MultipleForumSelectCriteria,
+            posts::MultiplePostSelectCriteria, users::MultipleUserSelectCriteria,
+        },
         state, user, users, Page, Role,
     },
-    models::{file::File, forum::Forum, post::Post, user::User},
+    models::{comment::Comment, file::File, forum::Forum, post::Post, user::User},
 };
 use async_graphql::{ComplexObject, Context, ResultExt};
-
-use super::posts::MultiplePostSelectCriteria;
 
 #[ComplexObject]
 impl Page {
@@ -68,5 +69,17 @@ impl Page {
             .await
             .extend_err(|_, _| {})?;
         Ok(posts.into_iter().map(|x| x.into()).collect())
+    }
+
+    async fn comment(
+        &self,
+        ctx: &Context<'_>,
+        criteria: MultipleCommentSelectCriteria,
+    ) -> async_graphql::Result<Vec<Comment>> {
+        let state = state!(ctx);
+        let comments = comments::fetch_comments(state, criteria, &self.page_info)
+            .await
+            .extend_err(|_, _| {})?;
+        Ok(comments.into_iter().map(|x| x.into()).collect())
     }
 }

@@ -137,6 +137,12 @@ pub async fn push_pending(
         )
         .unwrap()
         .credentials(creds)
+        .port(
+            env::var("SMTP_PORT")
+                .expect("SMTP_PORT must be set")
+                .parse::<u16>()
+                .expect("SMTP_PORT must be u16"),
+        )
         .build();
 
     mailer.send(email_message).await?;
@@ -203,7 +209,7 @@ pub async fn push_pending(
             false,
         )
         .forget();
-    pipeline.execute().await?;
+    pipeline.execute::<()>().await?;
 
     // We are done
     Ok(())
@@ -247,7 +253,7 @@ pub async fn verify_user(
             pipeline
                 .del(format!("verification_code:{}", &username))
                 .forget();
-            pipeline.execute().await?;
+            pipeline.execute::<()>().await?;
             return Err(RtwalkError::VerificationCodeExpired);
         }
 
@@ -290,7 +296,7 @@ pub async fn verify_user(
         pipeline
             .del(format!("verification_code:{}", &username))
             .forget();
-        pipeline.execute().await?;
+        pipeline.execute::<()>().await?;
         // We are done
         return Ok(user);
     }

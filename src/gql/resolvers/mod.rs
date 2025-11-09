@@ -1,4 +1,5 @@
+pub mod comments;
 pub mod forums;
 pub mod page;
-pub mod users;
 pub mod posts;
+pub mod users;

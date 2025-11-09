@@ -1,0 +1,10 @@
+#V2
+SELECT * FROM users;
+INFO FOR NS;
+INFO FOR ROOT;
+INFO FOR NS;
+USE NAMESPACE dev;
+SELECT * FROM users;
+SELECT * FROM user;
+USE DB rtwalk;
+SELECT * FROM user;

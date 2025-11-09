@@ -39,7 +39,7 @@
 - [x] Fetch single forum
 - [x] Fetch multiple forums
 - [ ] Fetch moderators
-- [ ] Forum search
+- [x] Forum search
 
 ---
 
@@ -58,15 +58,15 @@
 - [x] Post edit event
 ---
 
-- [ ] Create comment*
-- [ ] Edit comment*
+- [x] Create comment*
+- [x] Edit comment*
 - [ ] Delete comment
 
 ---
 
-- [ ] Fetch multiple comments**
-- [ ] Search comments
-- [ ] Event dispatch endpoint
+- [x] Fetch multiple comments**
+- [x] Search comments
+- [x] Event dispatch endpoint
 
 ---
 
@@ -78,3 +78,4 @@
 
 * Priority
 # TODO
+Comment tree pending

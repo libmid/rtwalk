@@ -1,0 +1,5 @@
+/target
+.direnv/
+data/
+scripts/env.sh
+surreal/

@@ -199,7 +199,7 @@ impl UserMutationRoot {
             )
             .forget();
         pipeline
-            .execute()
+            .execute::<()>()
             .await
             .map_err(|e| RtwalkError::RedisError(e))
             .extend_err(|_, _| {})?;
@@ -211,7 +211,8 @@ impl UserMutationRoot {
         } else {
             config::SESSION_EXPIERY_SECONDS as i64
         }));
-        cookie.set_secure(true);
+        // TODO: Set secure
+        // cookie.set_secure(true);
         signed_jar.add(cookie);
 
         Ok(user)
@@ -244,7 +245,7 @@ impl UserMutationRoot {
             )
             .forget();
         pipeline
-            .execute()
+            .execute::<()>()
             .await
             .map_err(|e| RtwalkError::RedisError(e))
             .extend_err(|_, _| {})?;
@@ -275,7 +276,7 @@ impl UserMutationRoot {
             .del(format!("auth_session_tracker:{}", user.id.to_string()))
             .forget();
         pipeline
-            .execute()
+            .execute::<()>()
             .await
             .map_err(|e| RtwalkError::RedisError(e))
             .extend_err(|_, _| {})?;
@@ -341,7 +342,7 @@ impl UserMutationRoot {
                 )
                 .forget();
             pipeline
-                .execute()
+                .execute::<()>()
                 .await
                 .map_err(|e| RtwalkError::RedisError(e))
                 .extend_err(|_, _| {})?;
@@ -390,7 +391,7 @@ impl UserMutationRoot {
                 )
                 .forget();
             pipeline
-                .execute()
+                .execute::<()>()
                 .await
                 .map_err(|e| RtwalkError::RedisError(e))
                 .extend_err(|_, _| {})?;
@@ -433,7 +434,7 @@ impl UserMutationRoot {
             .del(format!("auth_session_tracker:{}", bot.id.to_string()))
             .forget();
         pipeline
-            .execute()
+            .execute::<()>()
             .await
             .map_err(|e| RtwalkError::RedisError(e))
             .extend_err(|_, _| {})?;
@@ -476,7 +477,7 @@ impl UserMutationRoot {
             .del(format!("auth_session_tracker:{}", bot.id.to_string()))
             .forget();
         pipeline
-            .execute()
+            .execute::<()>()
             .await
             .map_err(|e| RtwalkError::RedisError(e))
             .extend_err(|_, _| {})?;
@@ -648,7 +649,7 @@ impl UserMutationRoot {
             )
             .forget();
         pipeline
-            .execute()
+            .execute::<()>()
             .await
             .map_err(|e| RtwalkError::RedisError(e))
             .extend_err(|_, _| {})?;

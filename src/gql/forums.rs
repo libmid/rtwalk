@@ -122,34 +122,63 @@ pub async fn fetch_forums(
             }
             res.take(0)?
         }
-        MultipleForumSelectCriteria::Search(search) => {
-            let mut query = state
+        MultipleForumSelectCriteria::Search(search) => match search.as_str() {
+            "*" => {
+                let mut query = state
+                    .db
+                    .query("SELECT * FROM forum ORDER BY created_at ASC LIMIT $limit START $start");
+                if page_info.needs_page_info {
+                    query = query.query("SELECT count() as total FROM forum")
+                }
+                let mut res = query
+                    .bind(("limit", page_info.per_page))
+                    .bind(("start", (page_info.page - 1) * page_info.per_page))
+                    .await?;
+
+                if page_info.needs_page_info {
+                    if let Some(total) = res.take((1, "total"))? {
+                        page_info
+                            .total
+                            .0
+                            .store(total, std::sync::atomic::Ordering::Relaxed);
+                        page_info.has_next_page.0.store(
+                            total > (page_info.page - 1) * page_info.per_page + page_info.per_page,
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
+                    }
+                }
+
+                res.take(0)?
+            }
+            _ => {
+                let mut query = state
                 .db
                 .query("SELECT * FROM forum WHERE name @0@ $query OR display_name @1@ $query OR description @2@ $query ORDER BY created_at ASC LIMIT $limit START $start");
-            if page_info.needs_page_info {
-                query = query.query("SELECT count() as total FROM forum WHERE name @0@ $query OR display_name @1@ $query OR description @2@ $query")
-            }
-            let mut res = query
-                .bind(("query", search))
-                .bind(("limit", page_info.per_page))
-                .bind(("start", (page_info.page - 1) * page_info.per_page))
-                .await?;
-
-            if page_info.needs_page_info {
-                if let Some(total) = res.take((1, "total"))? {
-                    page_info
-                        .total
-                        .0
-                        .store(total, std::sync::atomic::Ordering::Relaxed);
-                    page_info.has_next_page.0.store(
-                        total > (page_info.page - 1) * page_info.per_page + page_info.per_page,
-                        std::sync::atomic::Ordering::Relaxed,
-                    );
+                if page_info.needs_page_info {
+                    query = query.query("SELECT count() as total FROM forum WHERE name @0@ $query OR display_name @1@ $query OR description @2@ $query")
                 }
-            }
+                let mut res = query
+                    .bind(("query", search))
+                    .bind(("limit", page_info.per_page))
+                    .bind(("start", (page_info.page - 1) * page_info.per_page))
+                    .await?;
 
-            res.take(0)?
-        }
+                if page_info.needs_page_info {
+                    if let Some(total) = res.take((1, "total"))? {
+                        page_info
+                            .total
+                            .0
+                            .store(total, std::sync::atomic::Ordering::Relaxed);
+                        page_info.has_next_page.0.store(
+                            total > (page_info.page - 1) * page_info.per_page + page_info.per_page,
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
+                    }
+                }
+
+                res.take(0)?
+            }
+        },
     };
 
     Ok(forums)

@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use async_graphql::SimpleObject;
 use chrono::{DateTime, Utc};
 use cuid2::cuid;
@@ -29,7 +31,7 @@ impl DBForum {
             description: None,
             icon: None,
             banner: None,
-            created_at: DateTime::default(),
+            created_at: SystemTime::now().into(),
             locked: false,
         }
     }
