@@ -59,16 +59,19 @@ impl CommentMutationRoot {
             .extend_err(|_, _| {})?
             .into();
 
-        state.redis.publish(
-            "rte-comment-create",
-            serde_json::to_vec(&RtEvent {
-                ty: RtEventType::CommentCreate,
-                event_data: RtEventData::CommentCreate(CommentCreateEvent {
-                    data: comment.clone(),
-                }),
-            })
-            .expect("Cant fail to serialize self constructed data"),
-        );
+        state
+            .redis
+            .publish(
+                "rte-comment-create",
+                serde_json::to_vec(&RtEvent {
+                    ty: RtEventType::CommentCreate,
+                    event_data: RtEventData::CommentCreate(CommentCreateEvent {
+                        data: comment.clone(),
+                    }),
+                })
+                .expect("Cant fail to serialize self constructed data"),
+            )
+            .await?;
 
         Ok(comment)
     }
@@ -89,7 +92,7 @@ impl CommentMutationRoot {
         if let Some(mut comment) = comment {
             let original_comment: Comment = comment.clone().into();
 
-            if &user.id.0 != comment.commenter.key() {
+            if user.id.0 != comment.commenter.key {
                 return Err(RtwalkError::UnauhorizedRequest).extend_err(|_, _| {});
             }
 
@@ -111,17 +114,20 @@ impl CommentMutationRoot {
 
             let updated_comment: Comment = res.expect("Comment exists").into();
 
-            state.redis.publish(
-                "rte-post-update",
-                serde_json::to_vec(&RtEvent {
-                    ty: RtEventType::CommentEdit,
-                    event_data: RtEventData::CommentEdit(CommentEditEvent {
-                        original: original_comment,
-                        new: updated_comment.clone(),
-                    }),
-                })
-                .expect("Cant fail to serialize self constructed data"),
-            );
+            state
+                .redis
+                .publish(
+                    "rte-comment-update",
+                    serde_json::to_vec(&RtEvent {
+                        ty: RtEventType::CommentEdit,
+                        event_data: RtEventData::CommentEdit(CommentEditEvent {
+                            original: original_comment,
+                            new: updated_comment.clone(),
+                        }),
+                    })
+                    .expect("Cant fail to serialize self constructed data"),
+                )
+                .await?;
 
             Ok(updated_comment)
         } else {

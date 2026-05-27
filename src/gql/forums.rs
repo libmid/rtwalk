@@ -4,7 +4,7 @@ use crate::{
     models::{forum::DBForum, Key},
     state::State,
 };
-use surrealdb::RecordId;
+use surrealdb::types::RecordId;
 
 use super::resolvers::forums::{ForumSelectCriteria, MultipleForumSelectCriteria};
 
@@ -57,21 +57,21 @@ pub async fn fetch_forums(
     criteria: MultipleForumSelectCriteria,
     page_info: &PageInfo,
 ) -> Result<Vec<DBForum>, RtwalkError> {
+    let mut queries = vec![];
     let forums: Vec<DBForum> = match criteria {
         MultipleForumSelectCriteria::Ids(ids) => {
-            let mut query = state
-                .db
-                .query("SELECT * FROM $ids LIMIT $limit START $start");
+            queries.clear();
+            queries.push("SELECT * FROM $ids LIMIT $limit START $start");
 
             if page_info.needs_page_info {
-                query = query.query("SELECT count() as total FROM $ids");
+                queries.push("SELECT count() as total FROM $ids");
             }
-
+            let query = state.db.query(queries.join(";"));
             let mut res = query
                 .bind((
                     "ids",
                     ids.into_iter()
-                        .map(|x| RecordId::from_table_key("forum", x))
+                        .map(|x| RecordId::new("forum", x))
                         .collect::<Vec<_>>(),
                 ))
                 .bind(("limit", page_info.per_page))
@@ -94,14 +94,13 @@ pub async fn fetch_forums(
             res.take(0)?
         }
         MultipleForumSelectCriteria::Names(names) => {
-            let mut query = state
-                .db
-                .query("SELECT * FROM forum WHERE name IN $names LIMIT $limit START $start");
+            queries.clear();
+            queries.push("SELECT * FROM forum WHERE name IN $names LIMIT $limit START $start");
 
             if page_info.needs_page_info {
-                query = query.query("SELECT count() as total FROM forum WHERE name IN $names");
+                queries.push("SELECT count() as total FROM forum WHERE name IN $names");
             }
-
+            let query = state.db.query(queries.join(";"));
             let mut res = query
                 .bind(("names", names))
                 .bind(("limit", page_info.per_page))
@@ -124,12 +123,13 @@ pub async fn fetch_forums(
         }
         MultipleForumSelectCriteria::Search(search) => match search.as_str() {
             "*" => {
-                let mut query = state
-                    .db
-                    .query("SELECT * FROM forum ORDER BY created_at ASC LIMIT $limit START $start");
+                queries.clear();
+                queries
+                    .push("SELECT * FROM forum ORDER BY created_at ASC LIMIT $limit START $start");
                 if page_info.needs_page_info {
-                    query = query.query("SELECT count() as total FROM forum")
+                    queries.push("SELECT count() as total FROM forum")
                 }
+                let query = state.db.query(queries.join(";"));
                 let mut res = query
                     .bind(("limit", page_info.per_page))
                     .bind(("start", (page_info.page - 1) * page_info.per_page))
@@ -151,12 +151,12 @@ pub async fn fetch_forums(
                 res.take(0)?
             }
             _ => {
-                let mut query = state
-                .db
-                .query("SELECT * FROM forum WHERE name @0@ $query OR display_name @1@ $query OR description @2@ $query ORDER BY created_at ASC LIMIT $limit START $start");
+                queries.clear();
+                queries.push("SELECT * FROM forum WHERE name @0@ $query OR display_name @1@ $query OR description @2@ $query ORDER BY created_at ASC LIMIT $limit START $start");
                 if page_info.needs_page_info {
-                    query = query.query("SELECT count() as total FROM forum WHERE name @0@ $query OR display_name @1@ $query OR description @2@ $query")
+                    queries.push("SELECT count() as total FROM forum WHERE name @0@ $query OR display_name @1@ $query OR description @2@ $query")
                 }
+                let query = state.db.query(queries.join(";"));
                 let mut res = query
                     .bind(("query", search))
                     .bind(("limit", page_info.per_page))

@@ -4,11 +4,11 @@ use async_graphql::SimpleObject;
 use chrono::{DateTime, Utc};
 use cuid2::cuid;
 use serde::{Deserialize, Serialize};
-use surrealdb::RecordId;
+use surrealdb::types::{RecordId, SurrealValue};
 
 use super::{file::File, Key};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, SurrealValue)]
 pub struct DBPost {
     pub id: RecordId,
     pub poster: RecordId,
@@ -35,9 +35,9 @@ impl DBPost {
         let created_at: DateTime<Utc> = SystemTime::now().into();
         let edited_at = created_at.clone();
         Self {
-            id: RecordId::from_table_key("forum", cuid()),
-            poster: RecordId::from_table_key("user", poster.0),
-            forum: RecordId::from_table_key("forum", forum.0),
+            id: RecordId::new("forum", cuid()),
+            poster: RecordId::new("user", poster.0),
+            forum: RecordId::new("forum", forum.0),
             title,
             tags,
             content,
@@ -68,9 +68,9 @@ pub struct Post {
 impl From<DBPost> for Post {
     fn from(value: DBPost) -> Self {
         Self {
-            id: Key(value.id.key().to_owned()),
-            poster_id: Key(value.poster.key().to_owned()),
-            forum_id: Key(value.forum.key().to_owned()),
+            id: Key(value.id.key),
+            poster_id: Key(value.poster.key),
+            forum_id: Key(value.forum.key),
             title: value.title,
             tags: value.tags,
             content: value.content,

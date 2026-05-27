@@ -2,10 +2,11 @@ use async_graphql::{SimpleObject, UploadValue};
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
+use surrealdb::types::SurrealValue;
 
 use crate::error::RtwalkError;
 
-#[derive(SimpleObject, Serialize, Deserialize, Debug, Clone)]
+#[derive(SimpleObject, Serialize, Deserialize, Debug, Clone, SurrealValue)]
 pub struct File {
     pub loc: String,
 }

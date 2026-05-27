@@ -30,7 +30,7 @@ use rustis::{
 };
 use rusty_paseto::prelude::*;
 use sailfish::TemplateSimple;
-use surrealdb::RecordId;
+use surrealdb::types::RecordId;
 use zxcvbn::zxcvbn;
 
 use super::resolvers::users::{MultipleUserSelectCriteria, UserSelectCriteria};
@@ -67,8 +67,8 @@ pub async fn push_pending(
     // First make sure username is unique
     let mut exists = state
         .db
-        .query("SELECT 1 FROM user WHERE username = $username")
-        .query("SELECT 1 FROM user_secret WHERE email = $email")
+        .query("SELECT 1 FROM user WHERE username = $username; SELECT 1 FROM user_secret WHERE email = $email")
+        // .query("SELECT 1 FROM user_secret WHERE email = $email")
         .bind(("username", username.clone()))
         .bind(("email", email.clone()))
         .await?;
@@ -110,42 +110,42 @@ pub async fn push_pending(
     .render_once()
     .expect("Can't fail");
 
-    let email_message = Message::builder()
-        .from(
-            format!(
-                "{} <{}>",
-                env::var("SMTP_FROM_NAME").expect("SMTP_FROM_NAME must be set"),
-                env::var("SMTP_FROM").expect("SMTP_FROM must be set")
-            )
-            .parse()
-            .unwrap(),
-        )
-        .to(format!("{username} <{email}>").parse().unwrap())
-        .subject("Verify your email")
-        .header(ContentType::TEXT_HTML)
-        .body(template)
-        .unwrap();
+    // let email_message = Message::builder()
+    //     .from(
+    //         format!(
+    //             "{} <{}>",
+    //             env::var("SMTP_FROM_NAME").expect("SMTP_FROM_NAME must be set"),
+    //             env::var("SMTP_FROM").expect("SMTP_FROM must be set")
+    //         )
+    //         .parse()
+    //         .unwrap(),
+    //     )
+    //     .to(format!("{username} <{email}>").parse().unwrap())
+    //     .subject("Verify your email")
+    //     .header(ContentType::TEXT_HTML)
+    //     .body(template)
+    //     .unwrap();
 
-    let creds = Credentials::new(
-        env::var("SMTP_USERNAME").expect("SMTP_USERNAME must be set"),
-        env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set"),
-    );
+    // let creds = Credentials::new(
+    //     env::var("SMTP_USERNAME").expect("SMTP_USERNAME must be set"),
+    //     env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set"),
+    // );
 
-    let mailer: AsyncSmtpTransport<Tokio1Executor> =
-        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(
-            &env::var("SMTP_RELAY").expect("SMTP_RELAY must be set"),
-        )
-        .unwrap()
-        .credentials(creds)
-        .port(
-            env::var("SMTP_PORT")
-                .expect("SMTP_PORT must be set")
-                .parse::<u16>()
-                .expect("SMTP_PORT must be u16"),
-        )
-        .build();
+    // let mailer: AsyncSmtpTransport<Tokio1Executor> =
+    //     AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(
+    //         &env::var("SMTP_RELAY").expect("SMTP_RELAY must be set"),
+    //     )
+    //     .unwrap()
+    //     .credentials(creds)
+    //     .port(
+    //         env::var("SMTP_PORT")
+    //             .expect("SMTP_PORT must be set")
+    //             .parse::<u16>()
+    //             .expect("SMTP_PORT must be u16"),
+    //     )
+    //     .build();
 
-    mailer.send(email_message).await?;
+    // mailer.send(email_message).await?;
 
     // TODO: Actually send the mail, just printing for now
     // WARNING: Dont forget this ^
@@ -172,7 +172,7 @@ pub async fn push_pending(
             serde_json::to_string(&user).map_err(|e| {
                 RtwalkError::ImpossibleError("Serialization of DBUser can't fail", Some(e.into()))
             })?,
-            SetCondition::None,
+            SetCondition::NX,
             SetExpiration::Ex(config::VERIFICATION_CODE_EXPIERY_SECONDS),
             false,
         )
@@ -186,7 +186,7 @@ pub async fn push_pending(
                     Some(e.into()),
                 )
             })?,
-            SetCondition::None,
+            SetCondition::NX,
             SetExpiration::Ex(config::VERIFICATION_CODE_EXPIERY_SECONDS),
             false,
         )
@@ -195,7 +195,7 @@ pub async fn push_pending(
         .set_with_options(
             tries_remaining_key,
             4,
-            SetCondition::None,
+            SetCondition::NX,
             SetExpiration::Ex(config::VERIFICATION_CODE_EXPIERY_SECONDS),
             false,
         )
@@ -204,7 +204,7 @@ pub async fn push_pending(
         .set_with_options(
             verification_code_key,
             code,
-            SetCondition::None,
+            SetCondition::NX,
             SetExpiration::Ex(config::VERIFICATION_CODE_EXPIERY_SECONDS),
             false,
         )
@@ -227,13 +227,13 @@ pub async fn verify_user(
     if let Some(user) = user {
         let mut pipeline = state.redis.create_pipeline();
         pipeline
-            .get::<_, ()>(format!("remaining_tries:{}", &username))
+            .get::<_, u64>(format!("remaining_tries:{}", &username))
             .queue();
         pipeline
-            .get::<_, ()>(format!("pending_secret:{}", &username))
+            .get::<_, String>(format!("pending_secret:{}", &username))
             .queue();
         pipeline
-            .get::<_, ()>(format!("verification_code:{}", &username))
+            .get::<_, String>(format!("verification_code:{}", &username))
             .queue();
 
         // Can this fail? If TTL expires between user fetch and this then yes,
@@ -310,10 +310,10 @@ async fn create_user(
 ) -> Result<DBUser, RtwalkError> {
     state
         .db
-        .query("BEGIN TRANSACTION")
-        .query("CREATE user CONTENT $user")
-        .query("CREATE user_secret CONTENT $secret")
-        .query("COMMIT TRANSACTION")
+        .query("BEGIN TRANSACTION; CREATE user CONTENT $user; CREATE user_secret CONTENT $secret; COMMIT TRANSACTION")
+        // .query("CREATE user CONTENT $user")
+        // .query("CREATE user_secret CONTENT $secret")
+        // .query("COMMIT TRANSACTION")
         .bind(("user", user.clone()))
         .bind(("secret", secret))
         .await?;
@@ -359,7 +359,7 @@ pub async fn create_bot(
     let bot = DBUser::new(
         username.into(),
         true,
-        Some(RecordId::from_table_key("user", owner_id.0)),
+        Some(RecordId::new("user", owner_id.0)),
     );
     let secret = DBUserSecret {
         user: bot.id.clone(),
@@ -428,13 +428,13 @@ pub async fn verify_bot_belongs_to_user(
     let mut bot = state
         .db
         .query("SELECT * FROM user WHERE id = $id")
-        .bind(("id", RecordId::from_table_key("user", bot_id.0.clone())))
+        .bind(("id", RecordId::new("user", bot_id.0.clone())))
         .await?;
     let bot: Option<DBUser> = bot.take(0)?;
 
     if let Some(bot) = bot {
         if let Some(ref owner) = bot.owner {
-            if owner.key() == &user_id.0 {
+            if owner.key == user_id.0 {
                 return Ok(bot);
             }
         }
@@ -462,7 +462,7 @@ pub async fn reset_bot_password(state: &State, bot_id: &Key) -> Result<String, R
         .db
         .query("UPDATE user_secret SET password = $password_hash WHERE user = $user RETURN email")
         .bind(("password_hash", password_hash))
-        .bind(("user", RecordId::from_table_key("user", bot_id.0.clone())))
+        .bind(("user", RecordId::new("user", bot_id.0.clone())))
         .await?;
 
     let mut email =
@@ -593,21 +593,22 @@ pub async fn fetch_users(
     criteria: MultipleUserSelectCriteria,
     page_info: &PageInfo,
 ) -> Result<Vec<DBUser>, RtwalkError> {
+    let mut queries = vec![];
     let user: Vec<DBUser> = match criteria {
         MultipleUserSelectCriteria::Ids(ids) => {
-            let mut query = state
-                .db
-                .query("SELECT * FROM $ids LIMIT $limit START $start");
+            queries.clear();
+            queries.push("SELECT * FROM $ids LIMIT $limit START $start");
 
             if page_info.needs_page_info {
-                query = query.query("SELECT count() as total FROM $ids");
+                queries.push("SELECT count() as total FROM $ids");
             }
 
+            let query = state.db.query(queries.join(";"));
             let mut res = query
                 .bind((
                     "ids",
                     ids.into_iter()
-                        .map(|x| RecordId::from_table_key("user", x))
+                        .map(|x| RecordId::new("user", x))
                         .collect::<Vec<_>>(),
                 ))
                 .bind(("limit", page_info.per_page))
@@ -630,15 +631,15 @@ pub async fn fetch_users(
             res.take(0)?
         }
         MultipleUserSelectCriteria::Usernames(usernames) => {
-            let mut query = state
-                .db
-                .query("SELECT * FROM user WHERE username IN $usernames LIMIT $limit START $start");
+            queries.clear();
+            queries
+                .push("SELECT * FROM user WHERE username IN $usernames LIMIT $limit START $start");
 
             if page_info.needs_page_info {
-                query =
-                    query.query("SELECT count() as total FROM user WHERE username IN $usernames");
+                queries.push("SELECT count() as total FROM user WHERE username IN $usernames");
             }
 
+            let query = state.db.query(queries.join(";"));
             let mut res = query
                 .bind(("usernames", usernames))
                 .bind(("limit", page_info.per_page))
@@ -660,12 +661,13 @@ pub async fn fetch_users(
             res.take(0)?
         }
         MultipleUserSelectCriteria::Search(search) => {
-            let mut query = state
-                .db
-                .query("SELECT * FROM user WHERE username @0@ $query OR display_name @1@ $query OR bio @2@ $query ORDER BY created_at ASC LIMIT $limit START $start");
+            queries.clear();
+            queries.push("SELECT * FROM user WHERE username @0@ $query OR display_name @1@ $query OR bio @2@ $query ORDER BY created_at ASC LIMIT $limit START $start");
             if page_info.needs_page_info {
-                query = query.query("SELECT count() as total FROM user WHERE username @0@ $query OR display_name @1@ $query OR bio @2@ $query")
+                queries.push("SELECT count() as total FROM user WHERE username @0@ $query OR display_name @1@ $query OR bio @2@ $query")
             }
+
+            let query = state.db.query(queries.join(";"));
             let mut res = query
                 .bind(("query", search))
                 .bind(("limit", page_info.per_page))

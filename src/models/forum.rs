@@ -4,11 +4,11 @@ use async_graphql::SimpleObject;
 use chrono::{DateTime, Utc};
 use cuid2::cuid;
 use serde::{Deserialize, Serialize};
-use surrealdb::RecordId;
+use surrealdb::types::{RecordId, SurrealValue};
 
 use super::{file::File, Key};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, SurrealValue)]
 pub struct DBForum {
     pub id: RecordId,
     pub owner: RecordId,
@@ -24,8 +24,8 @@ pub struct DBForum {
 impl DBForum {
     pub fn new(name: &str, owner: Key) -> Self {
         Self {
-            id: RecordId::from_table_key("forum", cuid()),
-            owner: RecordId::from_table_key("user", owner.0),
+            id: RecordId::new("forum", cuid()),
+            owner: RecordId::new("user", owner.0),
             name: name.to_string(),
             display_name: name.to_string(),
             description: None,
@@ -53,8 +53,8 @@ pub struct Forum {
 impl From<DBForum> for Forum {
     fn from(value: DBForum) -> Self {
         Self {
-            id: Key(value.id.key().to_owned()),
-            owner_id: Key(value.owner.key().to_owned()),
+            id: Key(value.id.key),
+            owner_id: Key(value.owner.key),
             name: value.name,
             display_name: value.display_name,
             description: value.description,

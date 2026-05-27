@@ -38,10 +38,10 @@ pub async fn setup(
 
     surreal_client
         .signin(Database {
-            username: "root",
-            password: "root",
-            namespace: "test",
-            database: test_name,
+            username: "root".to_string(),
+            password: "root".to_string(),
+            namespace: "test".to_string(),
+            database: test_name.to_string(),
         })
         .await?;
 

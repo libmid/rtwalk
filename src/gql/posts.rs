@@ -4,7 +4,7 @@ use crate::{
     models::{file::File, post::DBPost, Key},
     state::State,
 };
-use surrealdb::RecordId;
+use surrealdb::types::RecordId;
 
 use super::resolvers::posts::{MultiplePostSelectCriteria, PostSelectCriteria};
 
@@ -44,21 +44,21 @@ pub async fn fetch_posts(
     criteria: MultiplePostSelectCriteria,
     page_info: &PageInfo,
 ) -> Result<Vec<DBPost>, RtwalkError> {
+    let mut queries = vec![];
     let posts: Vec<DBPost> = match criteria {
         MultiplePostSelectCriteria::Ids(ids) => {
-            let mut query = state
-                .db
-                .query("SELECT * FROM $ids LIMIT $limit START $start");
+            queries.clear();
+            queries.push("SELECT * FROM $ids LIMIT $limit START $start");
 
             if page_info.needs_page_info {
-                query = query.query("SELECT count() as total FROM $ids");
+                queries.push("SELECT count() as total FROM $ids");
             }
-
+            let query = state.db.query(queries.join(";"));
             let mut res = query
                 .bind((
                     "ids",
                     ids.into_iter()
-                        .map(|x| RecordId::from_table_key("post", x.0))
+                        .map(|x| RecordId::new("post", x.0))
                         .collect::<Vec<_>>(),
                 ))
                 .bind(("limit", page_info.per_page))
@@ -81,16 +81,15 @@ pub async fn fetch_posts(
             res.take(0)?
         }
         MultiplePostSelectCriteria::Forum(id) => {
-            let mut query = state
-                .db
-                .query("SELECT * FROM post WHERE forum.id = $forum_id LIMIT $limit START $start");
+            queries.clear();
+            queries.push("SELECT * FROM post WHERE forum.id = $forum_id LIMIT $limit START $start");
 
             if page_info.needs_page_info {
-                query = query.query("SELECT count() as total FROM post WHERE forum.id = $forum_id");
+                queries.push("SELECT count() as total FROM post WHERE forum.id = $forum_id");
             }
-
+            let query = state.db.query(queries.join(";"));
             let mut res = query
-                .bind(("forum_id", RecordId::from_table_key("forum", id.0)))
+                .bind(("forum_id", RecordId::new("forum", id.0)))
                 .bind(("limit", page_info.per_page))
                 .bind(("start", (page_info.page - 1) * page_info.per_page))
                 .await?;
@@ -112,12 +111,13 @@ pub async fn fetch_posts(
         }
         MultiplePostSelectCriteria::Search(search) => match search.as_str() {
             "*" => {
-                let mut query = state
-                    .db
-                    .query("SELECT * FROM post ORDER BY created_at ASC LIMIT $limit START $start");
+                queries.clear();
+                queries
+                    .push("SELECT * FROM post ORDER BY created_at ASC LIMIT $limit START $start");
                 if page_info.needs_page_info {
-                    query = query.query("SELECT count() as total FROM post")
+                    queries.push("SELECT count() as total FROM post")
                 }
+                let query = state.db.query(queries.join(";"));
                 let mut res = query
                     .bind(("limit", page_info.per_page))
                     .bind(("start", (page_info.page - 1) * page_info.per_page))
@@ -139,12 +139,12 @@ pub async fn fetch_posts(
                 res.take(0)?
             }
             _ => {
-                let mut query = state
-                .db
-                .query("SELECT * FROM post WHERE title @0@ $query OR content @1@ $query ORDER BY created_at ASC LIMIT $limit START $start");
+                queries.clear();
+                queries.push("SELECT * FROM post WHERE title @0@ $query OR content @1@ $query ORDER BY created_at ASC LIMIT $limit START $start");
                 if page_info.needs_page_info {
-                    query = query.query("SELECT count() as total FROM post WHERE title @0@ $query OR content @1@ $query")
+                    queries.push("SELECT count() as total FROM post WHERE title @0@ $query OR content @1@ $query")
                 }
+                let query = state.db.query(queries.join(";"));
                 let mut res = query
                     .bind(("query", search))
                     .bind(("limit", page_info.per_page))

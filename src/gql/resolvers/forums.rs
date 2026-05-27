@@ -54,7 +54,7 @@ impl ForumMutationRoot {
         let forum: Option<DBForum> = state.db.select(("forum", forum_id.0)).await?;
 
         if let Some(mut forum) = forum {
-            if &user.id.0 != forum.owner.key() {
+            if user.id.0 != forum.owner.key {
                 return Err(RtwalkError::UnauhorizedRequest).extend_err(|_, _| {});
             }
 
@@ -85,7 +85,7 @@ impl ForumMutationRoot {
                 forum.icon.delete(&state.op).await.extend_err(|_, _| {})?;
 
                 let icon_file = File {
-                    loc: format!("{}/{}-{}", forum.id, cuid(), upload_value.filename),
+                    loc: format!("{:?}/{}-{}", forum.id, cuid(), upload_value.filename),
                 };
                 icon_file
                     .save(&state.op, &mut upload_value)
@@ -107,7 +107,7 @@ impl ForumMutationRoot {
                 forum.banner.delete(&state.op).await.extend_err(|_, _| {})?;
 
                 let banner_file = File {
-                    loc: format!("{}/{}-{}", &forum.id, cuid(), upload_value.filename),
+                    loc: format!("{:?}/{}-{}", &forum.id, cuid(), upload_value.filename),
                 };
                 banner_file
                     .save(&state.op, &mut upload_value)

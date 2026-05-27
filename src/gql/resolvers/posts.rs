@@ -61,14 +61,17 @@ impl PostMutationRoot {
             .extend_err(|_, _| {})?
             .into();
 
-        state.redis.publish(
-            "rte-post-create",
-            serde_json::to_vec(&RtEvent {
-                ty: RtEventType::PostCreate,
-                event_data: RtEventData::PostCreate(PostCreateEvent { data: post.clone() }),
-            })
-            .expect("Cant fail to serialize self constructed data"),
-        );
+        state
+            .redis
+            .publish(
+                "rte-post-create",
+                serde_json::to_vec(&RtEvent {
+                    ty: RtEventType::PostCreate,
+                    event_data: RtEventData::PostCreate(PostCreateEvent { data: post.clone() }),
+                })
+                .expect("Cant fail to serialize self constructed data"),
+            )
+            .await?;
 
         Ok(post)
     }
@@ -91,7 +94,7 @@ impl PostMutationRoot {
         if let Some(mut post) = post {
             let original_post: Post = post.clone().into();
 
-            if &user.id.0 != post.poster.key() {
+            if user.id.0 != post.poster.key {
                 return Err(RtwalkError::UnauhorizedRequest).extend_err(|_, _| {});
             }
 
@@ -121,17 +124,20 @@ impl PostMutationRoot {
 
             let updated_post: Post = res.expect("Post exists").into();
 
-            state.redis.publish(
-                "rte-post-update",
-                serde_json::to_vec(&RtEvent {
-                    ty: RtEventType::PostEdit,
-                    event_data: RtEventData::PostEdit(PostEditEvent {
-                        original: original_post,
-                        new: updated_post.clone(),
-                    }),
-                })
-                .expect("Cant fail to serialize self constructed data"),
-            );
+            state
+                .redis
+                .publish(
+                    "rte-post-update",
+                    serde_json::to_vec(&RtEvent {
+                        ty: RtEventType::PostEdit,
+                        event_data: RtEventData::PostEdit(PostEditEvent {
+                            original: original_post,
+                            new: updated_post.clone(),
+                        }),
+                    })
+                    .expect("Cant fail to serialize self constructed data"),
+                )
+                .await?;
 
             Ok(updated_post)
         } else {

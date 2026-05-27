@@ -4,7 +4,7 @@ use crate::{
     models::{comment::DBComment, file::File, Key},
     state::State,
 };
-use surrealdb::RecordId;
+use surrealdb::types::RecordId;
 
 use super::resolvers::comments::MultipleCommentSelectCriteria;
 
@@ -31,19 +31,20 @@ pub async fn fetch_comments(
     criteria: MultipleCommentSelectCriteria,
     page_info: &PageInfo,
 ) -> Result<Vec<DBComment>, RtwalkError> {
+    let mut queries = vec![];
     let comments: Vec<DBComment> = match criteria {
         MultipleCommentSelectCriteria::Post(id) => {
-            let mut query = state
-                .db
-                .query("SELECT * FROM comment WHERE post.id = $post_id LIMIT $limit START $start");
+            queries.clear();
+            queries
+                .push("SELECT * FROM comment WHERE post.id = $post_id LIMIT $limit START $start");
 
             if page_info.needs_page_info {
-                query =
-                    query.query("SELECT count() as total FROM comment WHERE post.id = $forum_id");
+                queries.push("SELECT count() as total FROM comment WHERE post.id = $forum_id");
             }
 
+            let query = state.db.query(queries.join(";"));
             let mut res = query
-                .bind(("post_id", RecordId::from_table_key("post", id.0)))
+                .bind(("post_id", RecordId::new("post", id.0)))
                 .bind(("limit", page_info.per_page))
                 .bind(("start", (page_info.page - 1) * page_info.per_page))
                 .await?;
@@ -64,12 +65,12 @@ pub async fn fetch_comments(
             res.take(0)?
         }
         MultipleCommentSelectCriteria::Search(search) => {
-            let mut query = state
-                .db
-                .query("SELECT * FROM comment WHERE content @1@ $query ORDER BY created_at ASC LIMIT $limit START $start");
+            queries.clear();
+            queries.push("SELECT * FROM comment WHERE content @1@ $query ORDER BY created_at ASC LIMIT $limit START $start");
             if page_info.needs_page_info {
-                query = query.query("SELECT count() as total FROM comment WHERE content @1@ $query")
+                queries.push("SELECT count() as total FROM comment WHERE content @1@ $query")
             }
+            let query = state.db.query(queries.join(";"));
             let mut res = query
                 .bind(("query", search))
                 .bind(("limit", page_info.per_page))

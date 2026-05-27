@@ -5,10 +5,11 @@ use crate::gql::ApiInfo;
 use async_graphql::{http::GraphiQLSource, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use axum::{
+    extract::State,
     http::{header::CONTENT_TYPE, Method},
     response::{Html, IntoResponse},
-    routing::get,
-    Extension, Router,
+    routing::{get, post},
+    Router,
 };
 use cliparser::{
     help, parse_process,
@@ -17,6 +18,7 @@ use cliparser::{
 use dotenvy::dotenv;
 use gql::{MergedMutationRoot, MergedQueryRoot, Subscription};
 use opendal::Operator;
+use rtwalk::rte::rte_sse_handler;
 use rustis::client::Client;
 use rusty_paseto::generic::{Local, PasetoSymmetricKey, V4};
 use state::Auth;
@@ -44,7 +46,7 @@ async fn graphiql() -> impl IntoResponse {
 }
 
 async fn gql(
-    schema: Extension<Schema<MergedQueryRoot, MergedMutationRoot, Subscription>>,
+    State(schema): State<Schema<MergedQueryRoot, MergedMutationRoot, Subscription>>,
     cookies: Cookies,
     request: GraphQLRequest,
 ) -> GraphQLResponse {
@@ -95,8 +97,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     surreal_client
         .signin(Root {
-            username: "root",
-            password: "root",
+            username: "root".to_string(),
+            password: "root".to_string(),
         })
         .await?;
 
@@ -118,7 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 major: 0,
                 minor: 1,
                 bugfix: 0,
-                rte: "ws://localhost:4001/ws",
+                rte: "http://127.0.0.1:4001/rte",
                 vc: "ws://localhost:4002/ws",
             },
             redis,
@@ -135,6 +137,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let app = Router::new()
         .route("/", get(graphiql).post(gql))
+        .route("/rte", post(rte_sse_handler))
         .route_service("/ws", GraphQLSubscription::new(schema.clone()))
         .layer(
             CorsLayer::new()
@@ -148,7 +151,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .allow_headers([CONTENT_TYPE]),
         )
         .layer(CookieManagerLayer::new())
-        .layer(Extension(schema));
+        .with_state(schema);
 
     let port = &res.argument_values.get("port").unwrap()[0];
     let host = &res.argument_values.get("host").unwrap()[0];

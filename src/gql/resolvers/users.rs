@@ -1,6 +1,6 @@
 use async_graphql::SimpleObject;
 use async_graphql::{ComplexObject, Context, Object, ResultExt};
-use surrealdb::RecordId;
+use surrealdb::types::RecordId;
 
 use crate::models::Key;
 use crate::{
@@ -31,7 +31,7 @@ impl User {
             let mut res = state
                 .db
                 .query("SELECT * FROM user WHERE owner = $owner")
-                .bind(("owner", RecordId::from_table_key("user", self.id.clone().0)))
+                .bind(("owner", RecordId::new("user", self.id.clone().0)))
                 .await
                 .map_err(|e| RtwalkError::from(e))
                 .extend_err(|_, _| {})?;
@@ -195,7 +195,7 @@ impl UserMutationRoot {
                 } else {
                     config::SESSION_EXPIERY_SECONDS
                 },
-                rustis::commands::ExpireOption::None,
+                rustis::commands::ExpireOption::Nx,
             )
             .forget();
         pipeline
@@ -387,7 +387,7 @@ impl UserMutationRoot {
                     } else {
                         config::SESSION_EXPIERY_SECONDS
                     },
-                    rustis::commands::ExpireOption::None,
+                    rustis::commands::ExpireOption::Nx,
                 )
                 .forget();
             pipeline
@@ -645,7 +645,7 @@ impl UserMutationRoot {
                 } else {
                     config::SESSION_EXPIERY_SECONDS
                 },
-                rustis::commands::ExpireOption::None,
+                rustis::commands::ExpireOption::Nx,
             )
             .forget();
         pipeline

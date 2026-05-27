@@ -2,9 +2,9 @@ use super::{file::File, Key};
 use async_graphql::SimpleObject;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use surrealdb::RecordId;
+use surrealdb::types::{RecordId, SurrealValue};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, SurrealValue)]
 pub struct DBUser {
     pub id: RecordId,
     pub username: String,
@@ -25,9 +25,9 @@ impl DBUser {
         let created_at = DateTime::default();
         let modified_at = created_at.clone();
         DBUser {
-            id: RecordId::from(("user".to_owned(), cuid2::cuid())),
+            id: RecordId::new("user", cuid2::cuid()),
             username: username.clone(),
-            display_name: username.clone(),
+            display_name: username,
             bio: None,
             pfp: None,
             banner: None,
@@ -40,7 +40,7 @@ impl DBUser {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, SurrealValue)]
 pub struct DBUserSecret {
     pub user: RecordId,
     pub email: String,
@@ -67,7 +67,7 @@ pub struct User {
 impl From<DBUser> for User {
     fn from(value: DBUser) -> Self {
         Self {
-            id: Key(value.id.key().to_owned()),
+            id: Key(value.id.key),
             username: value.username,
             display_name: value.display_name,
             bio: value.bio,
@@ -77,7 +77,7 @@ impl From<DBUser> for User {
             modified_at: value.modified_at.timestamp(),
             admin: value.admin,
             bot: value.bot,
-            owner: value.owner.map(|i| Key(i.key().to_owned())),
+            owner: value.owner.map(|i| Key(i.key)),
         }
     }
 }
@@ -85,7 +85,7 @@ impl From<DBUser> for User {
 impl From<User> for DBUser {
     fn from(value: User) -> Self {
         Self {
-            id: RecordId::from_table_key("user", value.id.0),
+            id: RecordId::new("user", value.id.0),
             username: value.username,
             display_name: value.display_name,
             bio: value.bio,
@@ -99,7 +99,7 @@ impl From<User> for DBUser {
                 .into(),
             admin: value.admin,
             bot: value.bot,
-            owner: value.owner.map(|i| RecordId::from_table_key("user", i.0)),
+            owner: value.owner.map(|i| RecordId::new("user", i.0)),
         }
     }
 }

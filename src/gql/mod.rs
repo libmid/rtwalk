@@ -196,7 +196,10 @@ impl Subscription {
         ctx: &Context<'_>,
         post_create: bool,
         post_update: bool,
+        comment_create: bool,
+        comment_update: bool,
     ) -> async_graphql::Result<impl Stream<Item = RtEvent>> {
+        dbg!("Started");
         let state = state!(ctx);
 
         let mut channels = vec![];
@@ -206,6 +209,14 @@ impl Subscription {
         if post_update {
             channels.push("rte-post-update");
         }
+        if comment_create {
+            channels.push("rte-comment-create");
+        }
+        if comment_update {
+            channels.push("rte-comment-update");
+        }
+
+        dbg!(&channels);
 
         let mut sub_stream = state
             .pubsub
@@ -216,7 +227,9 @@ impl Subscription {
 
         Ok(stream! {
             while let Some(maybe_sub_msg) = sub_stream.next().await {
+                dbg!(&maybe_sub_msg);
                 if let Ok(sub_msg) = maybe_sub_msg {
+
                     let event: RtEvent = serde_json::from_reader(sub_msg.payload.reader()).expect("Payload must be valid");
 
                     yield event;
